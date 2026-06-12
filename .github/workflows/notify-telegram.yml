@@ -1,0 +1,94 @@
+name: Notify Telegram on push
+
+on:
+  push:
+    branches: ["**"]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Telegram message
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TG_THREAD: ${{ secrets.TELEGRAM_THREAD_ID }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.event.after }}
+        run: |
+          set -euo pipefail
+
+          COUNT=$(jq '.commits | length' "$GITHUB_EVENT_PATH")
+          if [ "$COUNT" -eq 0 ]; then
+            echo "no commits in this push, skipping"
+            exit 0
+          fi
+
+          REPO="${GITHUB_REPOSITORY##*/}"
+          BRANCH="${GITHUB_REF_NAME}"
+          PUSHER="${GITHUB_ACTOR}"
+
+          COMMITS=$(jq -r '
+            def he: gsub("&";"&amp;") | gsub("<";"&lt;") | gsub(">";"&gt;");
+            .commits[:25]
+            | map("- <a href=\"" + .url + "\">" + .id[0:7] + "</a> "
+                  + ((.message | split("\n")[0]) | he))
+            | join("\n")
+          ' "$GITHUB_EVENT_PATH")
+
+          MORE=""
+          if [ "$COUNT" -gt 25 ]; then
+            MORE=$(printf '\n\nand %s more' "$((COUNT - 25))")
+          fi
+
+          ZERO="0000000000000000000000000000000000000000"
+          FILES=""
+          FILES_HEADER='<b>files:</b>'
+          if [ "$BEFORE_SHA" != "$ZERO" ]; then
+            CMP=$(curl -sS \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/compare/${BEFORE_SHA}...${AFTER_SHA}" \
+              || true)
+            FILES=$(printf '%s' "$CMP" | jq -r '
+              def he: gsub("&";"&amp;") | gsub("<";"&lt;") | gsub(">";"&gt;");
+              (.files // []) as $f
+              | ($f[:50] | map("- " + (.filename | he)
+                    + " <b>+" + (.additions | tostring) + "</b>"
+                    + " <s>-" + (.deletions | tostring) + "</s>")
+                 | join("\n"))
+                + (if ($f | length) > 50
+                   then "\nand " + (($f | length) - 50 | tostring) + " more file(s)"
+                   else "" end)
+            ' 2>/dev/null || true)
+            if [ -n "$FILES" ]; then
+              TOTAL_ADD=$(printf '%s' "$CMP" | jq -r '[(.files // [])[].additions] | add // 0' 2>/dev/null || echo "")
+              TOTAL_DEL=$(printf '%s' "$CMP" | jq -r '[(.files // [])[].deletions] | add // 0' 2>/dev/null || echo "")
+              if [ -n "$TOTAL_ADD" ] && [ -n "$TOTAL_DEL" ]; then
+                FILES_HEADER=$(printf '<b>files(+%s</b> <s>-%s</s><b>):</b>' "$TOTAL_ADD" "$TOTAL_DEL")
+              fi
+            fi
+          fi
+
+          if [ -z "$FILES" ]; then
+            FILES_HEADER='<b>files:</b>'
+            FILES=$(jq -r '
+              def he: gsub("&";"&amp;") | gsub("<";"&lt;") | gsub(">";"&gt;");
+              ([.commits[] | (.added + .modified + .removed)[]] | unique) as $f
+              | ($f[:50] | map("- " + he) | join("\n"))
+                + (if ($f | length) > 50
+                   then "\nand " + (($f | length) - 50 | tostring) + " more file(s)"
+                   else "" end)
+            ' "$GITHUB_EVENT_PATH")
+          fi
+
+          TEXT=$(printf '<b>%s</b> on <b>%s</b>\npushed by <b>%s</b> - %s commit(s)\n\n%s%s\n\n%s\n%s' \
+            "$REPO" "$BRANCH" "$PUSHER" "$COUNT" "$COMMITS" "$MORE" "$FILES_HEADER" "$FILES")
+
+          curl -sS -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TG_CHAT}" \
+            --data-urlencode "text=${TEXT}" \
+            -d parse_mode=HTML \
+            -d disable_web_page_preview=true \
+            ${TG_THREAD:+--data-urlencode "message_thread_id=${TG_THREAD}"}
