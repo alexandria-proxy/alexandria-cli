@@ -1,0 +1,10 @@
+# compiled binaries
+/alexandria
+/alexandria.exe
+/dist/
+*.exe
+*.out
+
+# go workspace / local stuff
+go.work
+go.work.sum
