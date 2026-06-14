@@ -59,13 +59,9 @@ func (m LangPicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "q", "esc":
 			return m, tea.Quit
 		case "up", "k":
-			if m.cursor > 0 {
-				m.cursor--
-			}
+			m.cursor = (m.cursor - 1 + len(languages)) % len(languages)
 		case "down", "j":
-			if m.cursor < len(languages)-1 {
-				m.cursor++
-			}
+			m.cursor = (m.cursor + 1) % len(languages)
 		case "enter", " ":
 			m.chosen = languages[m.cursor].code
 			return m, tea.Quit
