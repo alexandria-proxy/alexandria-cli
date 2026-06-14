@@ -3,6 +3,7 @@ package tui
 import (
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/alexandria-proxy/alexandria-cli/internal/i18n"
 	tea "github.com/charmbracelet/bubbletea"
@@ -88,10 +89,19 @@ func (m LangPicker) View() string {
 		}
 	}
 
+	title := titleStyle.Render(tr.ChooseLanguage)
+	logoLines := strings.Split(m.logo, "\n")
+	top := m.logo
+	titleRow := title
+	if len(logoLines) > 1 {
+		top = strings.Join(logoLines[:len(logoLines)-1], "\n")
+		titleRow = stampCenter(logoLines[len(logoLines)-1], title, lipgloss.Width(m.logo))
+	}
+
 	body := lipgloss.JoinVertical(
 		lipgloss.Center,
-		m.logo,
-		titleStyle.Render(tr.ChooseLanguage),
+		top,
+		titleRow,
 		"",
 		lipgloss.JoinVertical(lipgloss.Left, rows...),
 	)
@@ -100,12 +110,45 @@ func (m LangPicker) View() string {
 	if m.width == 0 || m.height == 0 {
 		return body + "\n" + hint
 	}
-	top := lipgloss.Place(m.width, m.height-1, lipgloss.Center, lipgloss.Center, body)
+	placed := lipgloss.Place(m.width, m.height-1, lipgloss.Center, lipgloss.Center, body)
 	bottom := lipgloss.PlaceHorizontal(m.width, lipgloss.Right, hint)
-	return top + "\n" + bottom
+	return placed + "\n" + bottom
 }
 
 func (m LangPicker) Chosen() string { return m.chosen }
+
+func stampCenter(base, over string, width int) string {
+	left, leftW := ansiRStrip(base)
+	overW := lipgloss.Width(over)
+	start := (width - overW) / 2
+	if start < leftW+1 {
+		start = leftW + 1 // never collide with the feet
+	}
+	gap := strings.Repeat(" ", start-leftW)
+	tail := width - start - overW
+	if tail < 0 {
+		tail = 0
+	}
+	return left + "\x1b[0m" + gap + over + strings.Repeat(" ", tail)
+}
+
+func ansiRStrip(s string) (string, int) {
+	var lastIdx, lastCol, col, i int
+	for i < len(s) {
+		if loc := ansiSeq.FindStringIndex(s[i:]); loc != nil && loc[0] == 0 {
+			i += loc[1]
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		col++
+		i += size
+		if r != ' ' {
+			lastIdx = i
+			lastCol = col
+		}
+	}
+	return s[:lastIdx], lastCol
+}
 
 func trimBlankLines(s string) string {
 	s = cursorSeq.ReplaceAllString(s, "")
