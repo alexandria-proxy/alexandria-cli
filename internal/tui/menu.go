@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -13,9 +14,18 @@ import (
 const (
 	revealTick       = 40 * time.Millisecond
 	revealFrames     = 28
-	revealFramesBack = 16
+	revealFramesBack = 12
 	revealEdge       = 0.22
 	revealPeak       = 0.85
+
+	idleTick  = 80 * time.Millisecond
+	ringCycle = 5.0
+	ringSweep = 1.5
+	ringMax   = 0.85
+	ringWidth      = 0.06
+	ringPeak       = 0.15
+	ringDelay      = 2.0
+	ringRetractDur = 0.18
 )
 
 var (
@@ -36,6 +46,11 @@ type Menu struct {
 	reverse    bool
 	frame      int
 	since      time.Time
+	ringAt     time.Time
+	retracting bool
+	retractAt  time.Time
+	ringFrom   float64
+	ringTo     float64
 	width      int
 	height     int
 }
@@ -46,10 +61,10 @@ func NewMenu(lang, mono, color string) Menu {
 	return Menu{tr: i18n.T(lang), monoCells: monoCells, colorCells: colorCells, logoW: w}
 }
 
-func (m Menu) Init() tea.Cmd { return tea.HideCursor }
+func (m Menu) Init() tea.Cmd { return tea.Batch(tea.HideCursor, m.tick()) }
 
 func (m Menu) tick() tea.Cmd {
-	d := time.Second
+	d := idleTick
 	if m.revealing {
 		d = revealTick
 	}
@@ -67,12 +82,15 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.frame >= end {
 				m.revealing = false
+				if m.connected {
+					m.ringAt = time.Now()
+				}
 			}
 		}
-		if m.connected || m.revealing {
-			return m, m.tick()
+		if m.retracting && time.Since(m.retractAt).Seconds() >= ringRetractDur {
+			m.retracting = false
 		}
-		return m, nil
+		return m, m.tick()
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		return m, tea.HideCursor
@@ -82,6 +100,7 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "enter", " ":
 			p := m.phase()
+			rNow, rOn := m.ring()
 			m.connected = !m.connected
 			m.reverse = !m.connected
 			m.revealing = true
@@ -90,10 +109,21 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.frame = int((2.0 - p) / 2.0 * float64(revealFrames))
 			}
+			m.ringAt = time.Time{}
 			if m.connected {
 				m.since = time.Now()
+				m.retracting = false
+			} else {
+				m.retracting = rOn
+				m.ringFrom = rNow
+				m.retractAt = time.Now()
+				if rNow/ringMax > 0.4 {
+					m.ringTo = ringMax + ringWidth
+				} else {
+					m.ringTo = 0
+				}
 			}
-			return m, m.tick()
+			return m, nil
 		}
 	}
 	return m, nil
@@ -121,30 +151,34 @@ func (m Menu) View() string {
 }
 
 func (m Menu) renderLogo() string {
-	if !m.revealing {
-		if m.connected {
-			return cellsToString(m.colorCells)
-		}
-		return cellsToString(m.monoCells)
-	}
-
 	wf, hf := float64(m.logoW), float64(len(m.colorCells))
 	phase := m.phase()
+	ringR, ringOn := m.ring()
 
 	var b strings.Builder
 	for r := range m.colorCells {
 		for c := range m.colorCells[r] {
-			cc := m.colorCells[r][c]
-			s := float64(c)/wf + float64(r)/hf
-			cl := cc
-			switch {
-			case s >= phase:
-				if d := s - phase; d < revealEdge && lit(cc.fg, cc.bg) {
-					t := (1 - d/revealEdge) * revealPeak
-					cl.fg, cl.bg = boost(cc.fg, t), boost(cc.bg, t)
+			cl := m.colorCells[r][c]
+			if m.revealing {
+				s := float64(c)/wf + float64(r)/hf
+				switch {
+				case s >= phase:
+					if d := s - phase; d < revealEdge && lit(cl.fg, cl.bg) {
+						t := (1 - d/revealEdge) * revealPeak
+						cl.fg, cl.bg = boost(cl.fg, t), boost(cl.bg, t)
+					}
+				case r < len(m.monoCells) && c < len(m.monoCells[r]):
+					cl = m.monoCells[r][c]
 				}
-			case r < len(m.monoCells) && c < len(m.monoCells[r]):
+			} else if !m.connected && r < len(m.monoCells) && c < len(m.monoCells[r]) {
 				cl = m.monoCells[r][c]
+			}
+			if ringOn && lit(cl.fg, cl.bg) {
+				nx, ny := float64(c)/wf-0.5, float64(r)/hf-0.5
+				if d := math.Abs(math.Hypot(nx, ny) - ringR); d < ringWidth {
+					t := (1 - d/ringWidth) * ringPeak
+					cl.fg, cl.bg = glint(cl.fg, t), glint(cl.bg, t)
+				}
 			}
 			b.WriteString(sgr(cl.fg, cl.bg, cl.reverse))
 			b.WriteRune(cl.ch)
@@ -155,6 +189,39 @@ func (m Menu) renderLogo() string {
 		}
 	}
 	return b.String()
+}
+
+func glint(c *rgb, t float64) *rgb {
+	if c == nil {
+		return nil
+	}
+	if 0.299*float64(c.r)+0.587*float64(c.g)+0.114*float64(c.b) < 160 {
+		return boost(c, t)
+	}
+	f := 1 - t
+	return &rgb{int(float64(c.r)*f + 0.5), int(float64(c.g)*f + 0.5), int(float64(c.b)*f + 0.5)}
+}
+
+func (m Menu) ring() (float64, bool) {
+	if m.retracting {
+		el := time.Since(m.retractAt).Seconds()
+		if el >= ringRetractDur {
+			return 0, false
+		}
+		return m.ringFrom + (m.ringTo-m.ringFrom)*(el/ringRetractDur), true
+	}
+	if !m.connected || m.revealing || m.ringAt.IsZero() {
+		return 0, false
+	}
+	el := time.Since(m.ringAt).Seconds() - ringDelay
+	if el < 0 {
+		return 0, false
+	}
+	cyc := math.Mod(el, ringCycle)
+	if cyc > ringSweep {
+		return 0, false
+	}
+	return cyc / ringSweep * ringMax, true
 }
 
 func (m Menu) phase() float64 {
@@ -168,21 +235,6 @@ func (m Menu) phase() float64 {
 	default:
 		return 2.0
 	}
-}
-
-func cellsToString(grid [][]cell) string {
-	var b strings.Builder
-	for r, row := range grid {
-		for _, cl := range row {
-			b.WriteString(sgr(cl.fg, cl.bg, cl.reverse))
-			b.WriteRune(cl.ch)
-		}
-		b.WriteString("\x1b[0m")
-		if r < len(grid)-1 {
-			b.WriteByte('\n')
-		}
-	}
-	return b.String()
 }
 
 func elapsed(d time.Duration) string {
