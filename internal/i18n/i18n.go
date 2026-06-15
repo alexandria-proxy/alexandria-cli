@@ -17,8 +17,8 @@ var table = map[string]Strings{
 	"ru": {
 		ChooseLanguage: "Выберите язык",
 		Hint:           "↑/↓ выбор • enter выбрать • q выход",
-		Connect:        "Подключить",
-		Disconnect:     "Отключить",
+		Connect:        "Подключиться",
+		Disconnect:     "Отключиться",
 	},
 	"fa": {
 		ChooseLanguage: "زبان را انتخاب کنید",
