@@ -69,7 +69,12 @@ type LangPicker struct {
 }
 
 func NewLangPicker(logo string) LangPicker {
-	lines := strings.Split(trimBlankLines(logo), "\n")
+	cells, w := parseLogo(logo)
+	return LangPicker{cells: cells, logoW: w}
+}
+
+func parseLogo(s string) ([][]cell, int) {
+	lines := strings.Split(trimBlankLines(s), "\n")
 	cells := make([][]cell, len(lines))
 	w := 0
 	for i, ln := range lines {
@@ -78,7 +83,7 @@ func NewLangPicker(logo string) LangPicker {
 			w = len(cells[i])
 		}
 	}
-	return LangPicker{cells: cells, logoW: w}
+	return cells, w
 }
 
 func (m LangPicker) Init() tea.Cmd { return tea.Batch(tea.HideCursor, shineTick()) }
