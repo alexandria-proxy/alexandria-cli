@@ -6,26 +6,9 @@ import (
 	"time"
 
 	"github.com/alexandria-proxy/alexandria-cli/internal/i18n"
+	"github.com/alexandria-proxy/alexandria-cli/internal/subscription"
 	"github.com/charmbracelet/lipgloss"
 )
-
-type Server struct {
-	Flag     string
-	Name     string
-	Protocol string
-	PingMs   int
-}
-
-type Subscription struct {
-	Name       string
-	UpdatedAt  time.Time
-	AutoUpdate time.Duration
-	UsedBytes  int64
-	TotalBytes int64
-	Expires    time.Time
-	Note       string
-	Servers    []Server
-}
 
 var (
 	panelAccent  = lipgloss.Color("#6C7BFF")
@@ -39,7 +22,7 @@ var (
 
 type serversPanel struct {
 	tr      i18n.Strings
-	subs    []Subscription
+	subs    []subscription.Subscription
 	cursor  int
 	query   string
 	focused bool
@@ -127,7 +110,7 @@ func (p serversPanel) render(width, height int) string {
 	return lipgloss.NewStyle().PaddingTop(1).PaddingLeft(2).Render(body)
 }
 
-func (p serversPanel) subCard(s Subscription, usable int) string {
+func (p serversPanel) subCard(s subscription.Subscription, usable int) string {
 	bodyW := usable - 4
 	if bodyW < 1 {
 		bodyW = 1
@@ -149,7 +132,7 @@ func (p serversPanel) subCard(s Subscription, usable int) string {
 	return cardBox(lines, panelDim, usable)
 }
 
-func (p serversPanel) serverCard(s Server, usable int, selected bool) string {
+func (p serversPanel) serverCard(s subscription.Server, usable int, selected bool) string {
 	bodyW := usable - 4
 	if bodyW < 1 {
 		bodyW = 1

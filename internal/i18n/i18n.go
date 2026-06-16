@@ -21,6 +21,7 @@ type Strings struct {
 	TypeSubscription string
 	TypeConfig       string
 	TypeJSON         string
+	Fetching         string
 }
 
 var table = map[string]Strings{
@@ -44,6 +45,7 @@ var table = map[string]Strings{
 		TypeSubscription: "Subscription",
 		TypeConfig:       "Configuration",
 		TypeJSON:         "JSON",
+		Fetching:         "Fetching…",
 	},
 	"ru": {
 		ChooseLanguage: "Выберите язык",
@@ -66,6 +68,7 @@ var table = map[string]Strings{
 		TypeSubscription: "Подписка",
 		TypeConfig:       "Конфигурация",
 		TypeJSON:         "JSON",
+		Fetching:         "Загрузка…",
 	},
 	"fa": {
 		ChooseLanguage: "زبان را انتخاب کنید",
@@ -88,6 +91,7 @@ var table = map[string]Strings{
 		TypeSubscription: "اشتراک",
 		TypeConfig:       "پیکربندی",
 		TypeJSON:         "JSON",
+		Fetching:         "در حال دریافت…",
 	},
 }
 

@@ -32,6 +32,8 @@ type addForm struct {
 	optCursor int
 	name      string
 	url       string
+	loading   bool
+	err       string
 }
 
 func newAddForm(tr i18n.Strings) addForm {
@@ -128,6 +130,11 @@ func (f addForm) render(width int) string {
 		labeledInput(f.tr.FieldURL, f.url, f.focus == fieldURL, usable), "",
 		btn,
 	)
+	if f.loading {
+		body = lipgloss.JoinVertical(lipgloss.Left, body, "", fieldLabel(f.tr.Fetching))
+	} else if f.err != "" {
+		body = lipgloss.JoinVertical(lipgloss.Left, body, "", errStyle.Render(" "+f.err))
+	}
 	return lipgloss.NewStyle().PaddingTop(1).PaddingLeft(2).Render(body)
 }
 
@@ -189,6 +196,8 @@ func chipLine(text string, w int, bg, fg lipgloss.Color) string {
 		Foreground(fg).
 		Render(" " + padLine(text, w-2) + " ")
 }
+
+var errStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#E0A6AC"))
 
 func fieldLabel(s string) string {
 	return lipgloss.NewStyle().Faint(true).Render(" " + s)
