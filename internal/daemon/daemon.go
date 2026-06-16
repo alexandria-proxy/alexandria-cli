@@ -13,6 +13,7 @@ import (
 
 	"github.com/alexandria-proxy/alexandria-cli/internal/ipc"
 	"github.com/alexandria-proxy/alexandria-cli/internal/subscription"
+	"github.com/alexandria-proxy/alexandria-cli/internal/xray"
 )
 
 type state struct {
@@ -55,6 +56,15 @@ func (s *state) handle(req ipc.Request) ipc.Response {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		return ipc.Response{OK: true, Subscriptions: s.subs}
+
+	case "ensure_core":
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer cancel()
+		path, err := xray.Ensure(ctx)
+		if err != nil {
+			return ipc.Response{Error: err.Error()}
+		}
+		return ipc.Response{OK: true, Path: path}
 
 	case "add_subscription":
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

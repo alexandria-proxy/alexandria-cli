@@ -18,6 +18,7 @@ type Request struct {
 type Response struct {
 	OK            bool                        `json:"ok"`
 	Error         string                      `json:"error,omitempty"`
+	Path          string                      `json:"path,omitempty"`
 	Subscriptions []subscription.Subscription `json:"subscriptions,omitempty"`
 }
 
