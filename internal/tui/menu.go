@@ -31,9 +31,25 @@ const (
 )
 
 var (
-	connectBtn    = lipgloss.NewStyle().Bold(true).Padding(0, 1).Background(btnGray).Foreground(lipgloss.Color("16"))
-	disconnectBtn = lipgloss.NewStyle().Bold(true).Padding(0, 1).Background(lipgloss.Color("#E0A6AC")).Foreground(lipgloss.Color("16"))
-	timerStyle    = lipgloss.NewStyle().Bold(true).PaddingLeft(2).Foreground(btnGray)
+	connectBtn        = lipgloss.NewStyle().Bold(true).Padding(0, 1).Background(btnGray).Foreground(lipgloss.Color("16"))
+	connectBtnBlur    = lipgloss.NewStyle().Bold(true).Padding(0, 1).Background(lipgloss.Color("#7E868D")).Foreground(lipgloss.Color("237"))
+	disconnectBtn     = lipgloss.NewStyle().Bold(true).Padding(0, 1).Background(lipgloss.Color("#E0A6AC")).Foreground(lipgloss.Color("16"))
+	disconnectBtnBlur = lipgloss.NewStyle().Bold(true).Padding(0, 1).Background(lipgloss.Color("#9C7A7E")).Foreground(lipgloss.Color("237"))
+	timerStyle        = lipgloss.NewStyle().Bold(true).PaddingLeft(2).Foreground(btnGray)
+)
+
+type focusZone int
+
+const (
+	focusConnect focusZone = iota
+	focusSearch
+)
+
+type panelMode int
+
+const (
+	modeList panelMode = iota
+	modeAdd
 )
 
 type menuTickMsg struct{}
@@ -54,6 +70,9 @@ type Menu struct {
 	ringFrom   float64
 	ringTo     float64
 	panel      serversPanel
+	focus      focusZone
+	mode       panelMode
+	form       addForm
 	width      int
 	height     int
 }
@@ -98,10 +117,60 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		return m, tea.HideCursor
+	case tea.MouseMsg:
+		if m.mode == modeList && m.width >= twoColMin && msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			m.focus = focusConnect
+			m.panel.focused = false
+			if m.overSearch(msg.X, msg.Y) {
+				m.focus = focusSearch
+				m.panel.focused = true
+			}
+		}
+		return m, nil
 	case tea.KeyMsg:
+		if msg.String() == "ctrl+c" {
+			return m, tea.Quit
+		}
+		if m.mode == modeAdd {
+			f, res := m.form.update(msg)
+			m.form = f
+			if res != formNone {
+				m.mode = modeList
+			}
+			return m, nil
+		}
+		if msg.String() == "ctrl+a" && m.width >= twoColMin {
+			m.mode = modeAdd
+			m.form = newAddForm(m.tr)
+			m.focus = focusConnect
+			m.panel.focused = false
+			return m, nil
+		}
+		if m.focus == focusSearch {
+			switch {
+			case msg.String() == "ctrl+c":
+				return m, tea.Quit
+			case msg.String() == "esc", msg.String() == "tab", msg.String() == "left":
+				m.focus = focusConnect
+				m.panel.focused = false
+			case msg.String() == "backspace":
+				m.panel.backspace()
+			case msg.Type == tea.KeyRunes:
+				m.panel.query += string(msg.Runes)
+			case msg.String() == " ":
+				m.panel.query += " "
+			}
+			return m, nil
+		}
 		switch msg.String() {
 		case "ctrl+c", "q", "esc":
 			return m, tea.Quit
+		case "right", "tab":
+			if m.width >= twoColMin {
+				m.focus = focusSearch
+				m.panel.focused = true
+			}
+			return m, nil
 		case "up", "k":
 			if n := m.panel.serverCount(); n > 0 {
 				m.panel.cursor = (m.panel.cursor - 1 + n) % n
@@ -146,15 +215,24 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Menu) View() string {
 	logo := m.renderLogo()
 
+	onConnect := m.focus == focusConnect && m.mode == modeList
 	var btn string
 	if m.connected {
+		db := disconnectBtn
+		if !onConnect {
+			db = disconnectBtnBlur
+		}
 		btn = lipgloss.JoinHorizontal(
 			lipgloss.Center,
-			disconnectBtn.Render(m.tr.Disconnect),
+			db.Render(m.tr.Disconnect),
 			timerStyle.Render("⏱"+elapsed(time.Since(m.since))),
 		)
 	} else {
-		btn = connectBtn.Render(m.tr.Connect)
+		cb := connectBtn
+		if !onConnect {
+			cb = connectBtnBlur
+		}
+		btn = cb.Render(m.tr.Connect)
 	}
 
 	unit := lipgloss.JoinVertical(lipgloss.Center, logo, "", btn)
@@ -167,9 +245,24 @@ func (m Menu) View() string {
 
 	leftW := m.width / 2
 	rightW := m.width - leftW
+	rightContent := m.panel.render(rightW, m.height)
+	if m.mode == modeAdd {
+		rightContent = m.form.render(rightW)
+	}
 	left := lipgloss.Place(leftW, m.height, lipgloss.Center, lipgloss.Center, unit)
-	right := lipgloss.Place(rightW, m.height, lipgloss.Left, lipgloss.Top, m.panel.render(rightW, m.height))
+	right := lipgloss.Place(rightW, m.height, lipgloss.Left, lipgloss.Top, rightContent)
 	return lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+}
+
+func (m Menu) overSearch(x, y int) bool {
+	leftW := m.width / 2
+	rightW := m.width - leftW
+	usable := rightW - 4
+	if usable < 16 {
+		usable = rightW
+	}
+	x0 := leftW + 2
+	return y >= 2 && y <= 4 && x >= x0 && x < x0+usable
 }
 
 func (m Menu) renderLogo() string {

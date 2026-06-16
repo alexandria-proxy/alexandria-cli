@@ -12,6 +12,15 @@ type Strings struct {
 	Expires      string
 	NoSubs       string
 	AddSubHint   string
+
+	AddSubTitle      string
+	FieldType        string
+	FieldName        string
+	FieldURL         string
+	AddBtn           string
+	TypeSubscription string
+	TypeConfig       string
+	TypeJSON         string
 }
 
 var table = map[string]Strings{
@@ -25,7 +34,16 @@ var table = map[string]Strings{
 		Autoupdate:     "autoupdate",
 		Expires:        "Expires",
 		NoSubs:         "No subscriptions found",
-		AddSubHint:     "Press «a» to add",
+		AddSubHint:     "Press «ctrl + a» to add",
+
+		AddSubTitle:      "Add subscription",
+		FieldType:        "Type",
+		FieldName:        "Subscription name",
+		FieldURL:         "Subscription URL",
+		AddBtn:           "Add",
+		TypeSubscription: "Subscription",
+		TypeConfig:       "Configuration",
+		TypeJSON:         "JSON",
 	},
 	"ru": {
 		ChooseLanguage: "Выберите язык",
@@ -33,12 +51,21 @@ var table = map[string]Strings{
 		Connect:        "Подключиться",
 		Disconnect:     "Отключиться",
 
-		ServersTitle: "Сервера",
+		ServersTitle: "Серверы",
 		SearchHint:   "Введите для поиска",
 		Autoupdate:   "автообновление",
 		Expires:      "Истекает",
 		NoSubs:       "Подписки не найдены",
-		AddSubHint:   "Нажмите «a» чтобы добавить",
+		AddSubHint:   "Нажмите «ctrl + a» чтобы добавить",
+
+		AddSubTitle:      "Добавление подписки",
+		FieldType:        "Тип",
+		FieldName:        "Имя подписки",
+		FieldURL:         "URL Подписки",
+		AddBtn:           "Добавить",
+		TypeSubscription: "Подписка",
+		TypeConfig:       "Конфигурация",
+		TypeJSON:         "JSON",
 	},
 	"fa": {
 		ChooseLanguage: "زبان را انتخاب کنید",
@@ -51,7 +78,16 @@ var table = map[string]Strings{
 		Autoupdate:   "بروزرسانی خودکار",
 		Expires:      "انقضا",
 		NoSubs:       "اشتراکی یافت نشد",
-		AddSubHint:   "«a» را برای افزودن بزنید",
+		AddSubHint:   "«ctrl + a» را برای افزودن بزنید",
+
+		AddSubTitle:      "افزودن اشتراک",
+		FieldType:        "نوع",
+		FieldName:        "نام اشتراک",
+		FieldURL:         "آدرس اشتراک",
+		AddBtn:           "افزودن",
+		TypeSubscription: "اشتراک",
+		TypeConfig:       "پیکربندی",
+		TypeJSON:         "JSON",
 	},
 }
 

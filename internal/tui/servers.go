@@ -38,13 +38,48 @@ var (
 )
 
 type serversPanel struct {
-	tr     i18n.Strings
-	subs   []Subscription
-	cursor int
+	tr      i18n.Strings
+	subs    []Subscription
+	cursor  int
+	query   string
+	focused bool
 }
 
 func newServersPanel(tr i18n.Strings) serversPanel {
 	return serversPanel{tr: tr}
+}
+
+func (p *serversPanel) backspace() {
+	r := []rune(p.query)
+	if len(r) > 0 {
+		p.query = string(r[:len(r)-1])
+	}
+}
+
+func (p serversPanel) searchView(usable int) string {
+	border := panelDim
+	var text string
+	switch {
+	case p.focused:
+		border = btnGray
+		text = lipgloss.NewStyle().Foreground(btnGray).Render(p.query) + cursorGlyph()
+	case p.query != "":
+		text = lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(p.query)
+	default:
+		text = lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(p.tr.SearchHint)
+	}
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(border).
+		Width(usable - 2).
+		Render(text)
+}
+
+func cursorGlyph() string {
+	if (time.Now().UnixMilli()/500)%2 == 0 {
+		return lipgloss.NewStyle().Reverse(true).Render(" ")
+	}
+	return " "
 }
 
 func (p serversPanel) serverCount() int {
@@ -65,12 +100,7 @@ func (p serversPanel) render(width, height int) string {
 	}
 
 	header := panelTitleSt.Render(p.tr.ServersTitle)
-	search := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(panelDim).
-		Width(usable - 2).
-		Foreground(lipgloss.Color("244")).
-		Render(p.tr.SearchHint)
+	search := p.searchView(usable)
 
 	blocks := []string{header, search}
 
