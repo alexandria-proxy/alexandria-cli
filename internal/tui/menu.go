@@ -110,13 +110,14 @@ type Menu struct {
 	form       addForm
 	width      int
 	height     int
+	ticking    bool
 }
 
 func NewMenu(lang, mono, color string) Menu {
 	monoCells, w := parseLogo(mono)
 	colorCells, _ := parseLogo(color)
 	tr := i18n.T(lang)
-	return Menu{tr: tr, monoCells: monoCells, colorCells: colorCells, logoW: w, panel: newServersPanel(tr)}
+	return Menu{tr: tr, monoCells: monoCells, colorCells: colorCells, logoW: w, panel: newServersPanel(tr), ticking: true}
 }
 
 func (m Menu) Init() tea.Cmd { return tea.Batch(tea.HideCursor, m.tick(), loadSubsCmd) }
@@ -127,6 +128,22 @@ func (m Menu) tick() tea.Cmd {
 		d = revealTick
 	}
 	return tea.Tick(d, func(time.Time) tea.Msg { return menuTickMsg{} })
+}
+
+func (m Menu) animating() bool {
+	return m.revealing || m.retracting || m.connected ||
+		m.focus == focusSearch || m.mode == modeAdd
+}
+
+func (m Menu) withTick(cmd tea.Cmd) (tea.Model, tea.Cmd) {
+	if m.animating() && !m.ticking {
+		m.ticking = true
+		if cmd == nil {
+			return m, m.tick()
+		}
+		return m, tea.Batch(cmd, m.tick())
+	}
+	return m, cmd
 }
 
 func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -147,6 +164,10 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.retracting && time.Since(m.retractAt).Seconds() >= ringRetractDur {
 			m.retracting = false
+		}
+		if !m.animating() {
+			m.ticking = false
+			return m, nil
 		}
 		return m, m.tick()
 	case subsLoadedMsg:
@@ -173,7 +194,7 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.panel.focused = true
 			}
 		}
-		return m, nil
+		return m.withTick(nil)
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
@@ -196,7 +217,7 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.form = newAddForm(m.tr)
 			m.focus = focusConnect
 			m.panel.focused = false
-			return m, nil
+			return m.withTick(nil)
 		}
 		if m.focus == focusSearch {
 			switch {
@@ -222,7 +243,7 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focus = focusSearch
 				m.panel.focused = true
 			}
-			return m, nil
+			return m.withTick(nil)
 		case "up", "k":
 			if n := m.panel.serverCount(); n > 0 {
 				m.panel.cursor = (m.panel.cursor - 1 + n) % n
@@ -258,7 +279,7 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.ringTo = 0
 				}
 			}
-			return m, nil
+			return m.withTick(nil)
 		}
 	}
 	return m, nil
