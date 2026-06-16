@@ -18,14 +18,16 @@ const (
 	revealEdge       = 0.22
 	revealPeak       = 0.85
 
-	idleTick  = 80 * time.Millisecond
-	ringCycle = 5.0
-	ringSweep = 1.5
-	ringMax   = 0.85
+	idleTick       = 80 * time.Millisecond
+	ringCycle      = 5.0
+	ringSweep      = 1.5
+	ringMax        = 0.85
 	ringWidth      = 0.06
 	ringPeak       = 0.15
 	ringDelay      = 2.0
 	ringRetractDur = 0.18
+
+	twoColMin = 96
 )
 
 var (
@@ -51,6 +53,7 @@ type Menu struct {
 	retractAt  time.Time
 	ringFrom   float64
 	ringTo     float64
+	panel      serversPanel
 	width      int
 	height     int
 }
@@ -58,7 +61,8 @@ type Menu struct {
 func NewMenu(lang, mono, color string) Menu {
 	monoCells, w := parseLogo(mono)
 	colorCells, _ := parseLogo(color)
-	return Menu{tr: i18n.T(lang), monoCells: monoCells, colorCells: colorCells, logoW: w}
+	tr := i18n.T(lang)
+	return Menu{tr: tr, monoCells: monoCells, colorCells: colorCells, logoW: w, panel: newServersPanel(tr)}
 }
 
 func (m Menu) Init() tea.Cmd { return tea.Batch(tea.HideCursor, m.tick()) }
@@ -98,6 +102,16 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c", "q", "esc":
 			return m, tea.Quit
+		case "up", "k":
+			if n := m.panel.serverCount(); n > 0 {
+				m.panel.cursor = (m.panel.cursor - 1 + n) % n
+			}
+			return m, nil
+		case "down", "j":
+			if n := m.panel.serverCount(); n > 0 {
+				m.panel.cursor = (m.panel.cursor + 1) % n
+			}
+			return m, nil
 		case "enter", " ":
 			p := m.phase()
 			rNow, rOn := m.ring()
@@ -147,7 +161,15 @@ func (m Menu) View() string {
 	if m.width == 0 || m.height == 0 {
 		return unit
 	}
-	return lipgloss.Place(m.width, m.height, lipgloss.Left, lipgloss.Center, unit)
+	if m.width < twoColMin {
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, unit)
+	}
+
+	leftW := m.width / 2
+	rightW := m.width - leftW
+	left := lipgloss.Place(leftW, m.height, lipgloss.Center, lipgloss.Center, unit)
+	right := lipgloss.Place(rightW, m.height, lipgloss.Left, lipgloss.Top, m.panel.render(rightW, m.height))
+	return lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 }
 
 func (m Menu) renderLogo() string {
