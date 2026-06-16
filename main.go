@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/alexandria-proxy/alexandria-cli/internal/config"
+	"github.com/alexandria-proxy/alexandria-cli/internal/daemon"
 	"github.com/alexandria-proxy/alexandria-cli/internal/tui"
 )
 
@@ -32,8 +33,11 @@ func main() {
 	}
 
 	if *daemonMode {
-		fmt.Println("daemon mode: not wired up yet")
-		os.Exit(0)
+		if err := daemon.Run(); err != nil {
+			fmt.Fprintln(os.Stderr, "daemon:", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	cfg, _ := config.Load()

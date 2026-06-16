@@ -6,7 +6,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alexandria-proxy/alexandria-cli/internal/daemon"
 	"github.com/alexandria-proxy/alexandria-cli/internal/i18n"
+	"github.com/alexandria-proxy/alexandria-cli/internal/ipc"
+	"github.com/alexandria-proxy/alexandria-cli/internal/subscription"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -54,6 +57,38 @@ const (
 
 type menuTickMsg struct{}
 
+type subsLoadedMsg struct{ subs []subscription.Subscription }
+
+type addResultMsg struct {
+	subs []subscription.Subscription
+	err  string
+}
+
+func loadSubsCmd() tea.Msg {
+	_ = daemon.Ensure()
+	resp, err := ipc.Send(ipc.Request{Cmd: "list"})
+	if err != nil {
+		return subsLoadedMsg{}
+	}
+	return subsLoadedMsg{subs: resp.Subscriptions}
+}
+
+func addSubCmd(url string) tea.Cmd {
+	return func() tea.Msg {
+		if err := daemon.Ensure(); err != nil {
+			return addResultMsg{err: err.Error()}
+		}
+		resp, err := ipc.Send(ipc.Request{Cmd: "add_subscription", URL: url})
+		if err != nil {
+			return addResultMsg{err: err.Error()}
+		}
+		if !resp.OK {
+			return addResultMsg{err: resp.Error}
+		}
+		return addResultMsg{subs: resp.Subscriptions}
+	}
+}
+
 type Menu struct {
 	tr         i18n.Strings
 	colorCells [][]cell
@@ -84,7 +119,7 @@ func NewMenu(lang, mono, color string) Menu {
 	return Menu{tr: tr, monoCells: monoCells, colorCells: colorCells, logoW: w, panel: newServersPanel(tr)}
 }
 
-func (m Menu) Init() tea.Cmd { return tea.Batch(tea.HideCursor, m.tick()) }
+func (m Menu) Init() tea.Cmd { return tea.Batch(tea.HideCursor, m.tick(), loadSubsCmd) }
 
 func (m Menu) tick() tea.Cmd {
 	d := idleTick
@@ -114,6 +149,18 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.retracting = false
 		}
 		return m, m.tick()
+	case subsLoadedMsg:
+		m.panel.subs = msg.subs
+		return m, nil
+	case addResultMsg:
+		m.form.loading = false
+		if msg.err != "" {
+			m.form.err = msg.err
+			return m, nil
+		}
+		m.panel.subs = msg.subs
+		m.mode = modeList
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		return m, tea.HideCursor
@@ -134,8 +181,13 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.mode == modeAdd {
 			f, res := m.form.update(msg)
 			m.form = f
-			if res != formNone {
+			switch res {
+			case formCancel:
 				m.mode = modeList
+			case formSubmit:
+				m.form.err = ""
+				m.form.loading = true
+				return m, addSubCmd(strings.TrimSpace(m.form.url))
 			}
 			return m, nil
 		}
