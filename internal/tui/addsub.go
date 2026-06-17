@@ -1,6 +1,11 @@
 package tui
 
 import (
+	"fmt"
+	"math"
+	"strings"
+	"time"
+
 	"github.com/alexandria-proxy/alexandria-cli/internal/i18n"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -122,20 +127,45 @@ func (f addForm) render(width int) string {
 		usable = width
 	}
 
-	btn := lipgloss.PlaceHorizontal(usable-2, lipgloss.Center, f.submitButton())
-	body := lipgloss.JoinVertical(lipgloss.Left,
+	parts := []string{
 		panelTitleSt.Render(f.tr.AddSubTitle), "",
 		f.typeField(usable), "",
 		labeledInput(f.tr.FieldName, f.name, f.focus == fieldName, usable), "",
 		labeledInput(f.tr.FieldURL, f.url, f.focus == fieldURL, usable), "",
-		btn,
-	)
-	if f.loading {
-		body = lipgloss.JoinVertical(lipgloss.Left, body, "", fieldLabel(f.tr.Fetching))
-	} else if f.err != "" {
-		body = lipgloss.JoinVertical(lipgloss.Left, body, "", errStyle.Render(" "+f.err))
 	}
+	if f.loading {
+		parts = append(parts, lipgloss.PlaceHorizontal(usable-2, lipgloss.Center, shimmer(f.tr.Fetching)), "")
+	} else if f.err != "" {
+		parts = append(parts, errStyle.Width(usable-2).Render(f.err), "")
+	}
+	parts = append(parts, lipgloss.PlaceHorizontal(usable-2, lipgloss.Center, f.submitButton()))
+
+	body := lipgloss.JoinVertical(lipgloss.Left, parts...)
 	return lipgloss.NewStyle().PaddingTop(1).PaddingLeft(2).Render(body)
+}
+
+func shimmer(text string) string {
+	runes := []rune(text)
+	n := len(runes)
+	if n == 0 {
+		return text
+	}
+	const radius = 3.0
+	frac := float64(time.Now().UnixMilli()%1300) / 1300.0
+	pos := -radius + frac*(float64(n)+2*radius)
+
+	var b strings.Builder
+	for i, r := range runes {
+		t := 1 - math.Abs(float64(i)-pos)/radius
+		if t < 0 {
+			t = 0
+		}
+		shade := 120 + int(t*135)
+		b.WriteString(lipgloss.NewStyle().
+			Foreground(lipgloss.Color(fmt.Sprintf("#%02x%02x%02x", shade, shade, shade))).
+			Render(string(r)))
+	}
+	return b.String()
 }
 
 func (f addForm) typeField(usable int) string {

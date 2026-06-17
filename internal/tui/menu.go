@@ -208,9 +208,9 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case formSubmit:
 				m.form.err = ""
 				m.form.loading = true
-				return m, addSubCmd(strings.TrimSpace(m.form.url))
+				return m.withTick(addSubCmd(strings.TrimSpace(m.form.url)))
 			}
-			return m, nil
+			return m.withTick(nil)
 		}
 		if msg.String() == "ctrl+a" && m.width >= twoColMin {
 			m.mode = modeAdd
