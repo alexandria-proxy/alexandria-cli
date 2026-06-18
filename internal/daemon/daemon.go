@@ -76,7 +76,17 @@ func (s *state) handle(req ipc.Request) ipc.Response {
 		}
 
 		s.mu.Lock()
-		s.subs = append(s.subs, sub)
+		replaced := false
+		for i := range s.subs {
+			if s.subs[i].URL == sub.URL {
+				s.subs[i] = sub
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			s.subs = append(s.subs, sub)
+		}
 		snapshot := append([]subscription.Subscription(nil), s.subs...)
 		s.mu.Unlock()
 
