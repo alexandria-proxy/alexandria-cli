@@ -21,7 +21,6 @@ const (
 )
 
 type Server struct {
-	Flag     string `json:"flag"`
 	Name     string `json:"name"`
 	Protocol string `json:"protocol"`
 	Host     string `json:"host"`
@@ -303,7 +302,12 @@ func chainLabel(proto, network, security string) string {
 }
 
 func decodeB64(s string) (string, bool) {
-	s = strings.TrimSpace(s)
+	s = strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\r' || r == ' ' || r == '\t' {
+			return -1
+		}
+		return r
+	}, s)
 	for _, enc := range []*base64.Encoding{
 		base64.StdEncoding, base64.RawStdEncoding,
 		base64.URLEncoding, base64.RawURLEncoding,
