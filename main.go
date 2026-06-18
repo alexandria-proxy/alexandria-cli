@@ -11,7 +11,7 @@ import (
 	"github.com/alexandria-proxy/alexandria-cli/internal/tui"
 )
 
-const version = "0.0.7-dev"
+const version = "0.1.0-dev"
 
 //go:embed assets/logo.txt
 var logo string
