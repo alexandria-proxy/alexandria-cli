@@ -54,8 +54,9 @@ func (s *state) handle(req ipc.Request) ipc.Response {
 
 	case "list":
 		s.mu.Lock()
-		defer s.mu.Unlock()
-		return ipc.Response{OK: true, Subscriptions: s.subs}
+		snapshot := append([]subscription.Subscription(nil), s.subs...)
+		s.mu.Unlock()
+		return ipc.Response{OK: true, Subscriptions: snapshot}
 
 	case "ensure_core":
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
