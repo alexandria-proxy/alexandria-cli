@@ -101,13 +101,15 @@ func download(ctx context.Context) (string, error) {
 	}
 	tmp.Close()
 
-	if dgstURL != "" {
-		want, err := fetchSHA256(ctx, dgstURL)
-		if err == nil && want != "" {
-			if got := hex.EncodeToString(h.Sum(nil)); !strings.EqualFold(got, want) {
-				return "", fmt.Errorf("checksum mismatch: got %s want %s", got, want)
-			}
-		}
+	if dgstURL == "" {
+		return "", errors.New("no checksum available for release asset")
+	}
+	want, err := fetchSHA256(ctx, dgstURL)
+	if err != nil {
+		return "", fmt.Errorf("verify checksum: %w", err)
+	}
+	if got := hex.EncodeToString(h.Sum(nil)); !strings.EqualFold(got, want) {
+		return "", fmt.Errorf("checksum mismatch: got %s want %s", got, want)
 	}
 
 	if err := extract(tmp.Name(), dir); err != nil {
@@ -201,13 +203,28 @@ func fetchSHA256(ctx context.Context, url string) (string, error) {
 	}
 	for _, line := range strings.Split(b.String(), "\n") {
 		norm := strings.ReplaceAll(strings.ToUpper(line), "-", "")
-		if strings.Contains(norm, "SHA256") {
-			if fields := strings.Fields(line); len(fields) > 0 {
-				return fields[len(fields)-1], nil
+		if !strings.Contains(norm, "SHA256") {
+			continue
+		}
+		for _, f := range strings.FieldsFunc(line, func(r rune) bool { return r == ' ' || r == '\t' || r == '=' || r == ':' }) {
+			if isHex64(f) {
+				return f, nil
 			}
 		}
 	}
 	return "", errors.New("sha256 not found in digest")
+}
+
+func isHex64(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, r := range s {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+			return false
+		}
+	}
+	return true
 }
 
 func extract(zipPath, dir string) error {
