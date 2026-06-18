@@ -35,8 +35,8 @@ type addForm struct {
 	typeIdx   int
 	typeOpen  bool
 	optCursor int
-	name      string
-	url       string
+	name      textInput
+	url       textInput
 	loading   bool
 	err       string
 }
@@ -49,7 +49,7 @@ func (f addForm) typeOptions() []string {
 	return []string{f.tr.TypeSubscription, f.tr.TypeConfig, f.tr.TypeJSON}
 }
 
-func (f addForm) update(msg tea.KeyMsg) (addForm, formResult) {
+func (f addForm) update(msg tea.KeyMsg, cw int) (addForm, formResult) {
 	s := msg.String()
 
 	if f.focus == fieldType && f.typeOpen {
@@ -68,6 +68,13 @@ func (f addForm) update(msg tea.KeyMsg) (addForm, formResult) {
 		return f, formNone
 	}
 
+	if f.focus == fieldName && f.name.handleKey(msg, cw) {
+		return f, formNone
+	}
+	if f.focus == fieldURL && f.url.handleKey(msg, cw) {
+		return f, formNone
+	}
+
 	switch s {
 	case "esc":
 		return f, formCancel
@@ -77,10 +84,10 @@ func (f addForm) update(msg tea.KeyMsg) (addForm, formResult) {
 			f.optCursor = f.typeIdx
 		}
 		return f, formNone
-	case "tab", "down":
+	case "tab", "down", "ctrl+down":
 		f.focus = (f.focus + 1) % fieldCount
 		return f, formNone
-	case "shift+tab", "up":
+	case "shift+tab", "up", "ctrl+up":
 		f.focus = (f.focus - 1 + fieldCount) % fieldCount
 		return f, formNone
 	case "enter":
@@ -94,29 +101,6 @@ func (f addForm) update(msg tea.KeyMsg) (addForm, formResult) {
 			f.focus = (f.focus + 1) % fieldCount
 		}
 		return f, formNone
-	case "backspace":
-		switch f.focus {
-		case fieldName:
-			f.name = dropLast(f.name)
-		case fieldURL:
-			f.url = dropLast(f.url)
-		}
-		return f, formNone
-	}
-
-	typed := ""
-	if msg.Type == tea.KeyRunes {
-		typed = string(msg.Runes)
-	} else if s == " " {
-		typed = " "
-	}
-	if typed != "" {
-		switch f.focus {
-		case fieldName:
-			f.name += typed
-		case fieldURL:
-			f.url += typed
-		}
 	}
 	return f, formNone
 }
@@ -201,20 +185,24 @@ func (f addForm) submitButton() string {
 	return st.Render(f.tr.AddBtn)
 }
 
-func labeledInput(label, val string, focused bool, usable int) string {
+func labeledInput(label string, ti textInput, focused bool, usable int) string {
+	cw := usable - 2
+	if cw < 1 {
+		cw = 1
+	}
 	border := panelDim
 	var text string
 	switch {
 	case focused:
 		border = btnGray
-		text = lipgloss.NewStyle().Foreground(btnGray).Render(val) + cursorGlyph()
-	case val != "":
-		text = lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(val)
+		text = ti.view(cw, true, btnGray)
+	case ti.value != "":
+		text = ti.view(cw, false, lipgloss.Color("252"))
 	}
 	box := lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder(), true, false, true, false).
 		BorderForeground(border).
-		Width(usable - 2).
+		Width(cw).
 		Render(text)
 	return lipgloss.JoinVertical(lipgloss.Left, fieldLabel(label), box)
 }
@@ -231,12 +219,4 @@ var errStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#E0A6AC"))
 
 func fieldLabel(s string) string {
 	return lipgloss.NewStyle().Faint(true).Render(" " + s)
-}
-
-func dropLast(s string) string {
-	r := []rune(s)
-	if len(r) == 0 {
-		return s
-	}
-	return string(r[:len(r)-1])
 }

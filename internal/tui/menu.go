@@ -46,6 +46,7 @@ type focusZone int
 const (
 	focusConnect focusZone = iota
 	focusSearch
+	focusServers
 )
 
 type panelMode int
@@ -185,22 +186,12 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		return m, tea.HideCursor
-	case tea.MouseMsg:
-		if m.mode == modeList && m.width >= twoColMin && msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
-			m.focus = focusConnect
-			m.panel.focused = false
-			if m.overSearch(msg.X, msg.Y) {
-				m.focus = focusSearch
-				m.panel.focused = true
-			}
-		}
-		return m.withTick(nil)
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
 		if m.mode == modeAdd {
-			f, res := m.form.update(msg)
+			f, res := m.form.update(msg, m.searchWidth())
 			m.form = f
 			switch res {
 			case formCancel:
@@ -208,11 +199,11 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case formSubmit:
 				m.form.err = ""
 				m.form.loading = true
-				return m.withTick(addSubCmd(strings.TrimSpace(m.form.url)))
+				return m.withTick(addSubCmd(strings.TrimSpace(m.form.url.value)))
 			}
 			return m.withTick(nil)
 		}
-		if msg.String() == "ctrl+a" && m.width >= twoColMin {
+		if msg.String() == "ctrl+a" && m.focus != focusSearch && m.width >= twoColMin {
 			m.mode = modeAdd
 			m.form = newAddForm(m.tr)
 			m.focus = focusConnect
@@ -220,18 +211,68 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.withTick(nil)
 		}
 		if m.focus == focusSearch {
-			switch {
-			case msg.String() == "ctrl+c":
+			switch msg.String() {
+			case "ctrl+c":
 				return m, tea.Quit
-			case msg.String() == "esc", msg.String() == "tab", msg.String() == "left":
+			case "tab":
 				m.focus = focusConnect
 				m.panel.focused = false
-			case msg.String() == "backspace":
-				m.panel.backspace()
-			case msg.Type == tea.KeyRunes:
-				m.panel.query += string(msg.Runes)
-			case msg.String() == " ":
-				m.panel.query += " "
+				return m, nil
+			case "esc":
+				m.panel.search = textInput{}
+				if m.panel.itemCount() > 0 {
+					m.focus = focusServers
+					m.panel.focused = false
+					m.panel.serversFocused = true
+					m.panel.cursor = 0
+				} else {
+					m.focus = focusConnect
+					m.panel.focused = false
+				}
+				return m, nil
+			case "ctrl+down":
+				if m.panel.itemCount() > 0 {
+					m.focus = focusServers
+					m.panel.focused = false
+					m.panel.serversFocused = true
+					m.panel.cursor = 0
+				}
+				return m, nil
+			case "down":
+				if m.panel.search.value == "" {
+					if m.panel.itemCount() > 0 {
+						m.focus = focusServers
+						m.panel.focused = false
+						m.panel.serversFocused = true
+						m.panel.cursor = 0
+					}
+					return m, nil
+				}
+			}
+			m.panel.search.handleKey(msg, m.searchWidth())
+			return m, nil
+		}
+		if m.focus == focusServers {
+			switch msg.String() {
+			case "esc", "left":
+				m.focus = focusConnect
+				m.panel.serversFocused = false
+				return m.withTick(nil)
+			case "up", "k", "ctrl+up":
+				if m.panel.cursor == 0 {
+					m.focus = focusSearch
+					m.panel.serversFocused = false
+					m.panel.focused = true
+					m.panel.search.focusEnd()
+					return m.withTick(nil)
+				}
+				m.panel.cursor--
+				return m, nil
+			case "down", "j", "ctrl+down":
+				if n := m.panel.itemCount(); m.panel.cursor < n-1 {
+					m.panel.cursor++
+				}
+				return m, nil
 			}
 			return m, nil
 		}
@@ -240,20 +281,17 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "right", "tab":
 			if m.width >= twoColMin {
-				m.focus = focusSearch
-				m.panel.focused = true
+				if m.panel.itemCount() > 0 {
+					m.focus = focusServers
+					m.panel.serversFocused = true
+					m.panel.cursor = 0
+				} else {
+					m.focus = focusSearch
+					m.panel.focused = true
+					m.panel.search.focusEnd()
+				}
 			}
 			return m.withTick(nil)
-		case "up", "k":
-			if n := m.panel.serverCount(); n > 0 {
-				m.panel.cursor = (m.panel.cursor - 1 + n) % n
-			}
-			return m, nil
-		case "down", "j":
-			if n := m.panel.serverCount(); n > 0 {
-				m.panel.cursor = (m.panel.cursor + 1) % n
-			}
-			return m, nil
 		case "enter", " ":
 			p := m.phase()
 			rNow, rOn := m.ring()
@@ -327,15 +365,13 @@ func (m Menu) View() string {
 	return lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 }
 
-func (m Menu) overSearch(x, y int) bool {
-	leftW := m.width / 2
-	rightW := m.width - leftW
-	usable := rightW - 4
-	if usable < 16 {
-		usable = rightW
+func (m Menu) searchWidth() int {
+	rightW := m.width - m.width/2
+	cw := rightW - 6
+	if cw < 1 {
+		cw = 1
 	}
-	x0 := leftW + 2
-	return y >= 2 && y <= 4 && x >= x0 && x < x0+usable
+	return cw
 }
 
 func (m Menu) renderLogo() string {

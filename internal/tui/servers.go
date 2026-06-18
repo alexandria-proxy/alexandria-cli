@@ -21,56 +21,63 @@ var (
 )
 
 type serversPanel struct {
-	tr      i18n.Strings
-	subs    []subscription.Subscription
-	cursor  int
-	query   string
-	focused bool
+	tr             i18n.Strings
+	subs           []subscription.Subscription
+	cursor         int
+	search         textInput
+	focused        bool
+	serversFocused bool
+}
+
+type selItem struct {
+	subIdx int
+	srvIdx int
+}
+
+func (p serversPanel) items() []selItem {
+	var items []selItem
+	for si, sub := range p.subs {
+		items = append(items, selItem{si, -1})
+		for ri := range sub.Servers {
+			items = append(items, selItem{si, ri})
+		}
+	}
+	return items
+}
+
+func (p serversPanel) itemCount() int {
+	n := 0
+	for _, sub := range p.subs {
+		n += 1 + len(sub.Servers)
+	}
+	return n
 }
 
 func newServersPanel(tr i18n.Strings) serversPanel {
 	return serversPanel{tr: tr}
 }
 
-func (p *serversPanel) backspace() {
-	r := []rune(p.query)
-	if len(r) > 0 {
-		p.query = string(r[:len(r)-1])
-	}
-}
-
 func (p serversPanel) searchView(usable int) string {
+	cw := usable - 2
+	if cw < 1 {
+		cw = 1
+	}
 	border := panelDim
 	var text string
 	switch {
 	case p.focused:
 		border = btnGray
-		text = lipgloss.NewStyle().Foreground(btnGray).Render(p.query) + cursorGlyph()
-	case p.query != "":
-		text = lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(p.query)
+		text = p.search.view(cw, true, btnGray)
+	case p.search.value != "":
+		text = p.search.view(cw, false, lipgloss.Color("252"))
 	default:
-		text = lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(p.tr.SearchHint)
+		text = lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(clipRunes(p.tr.SearchHint, cw))
 	}
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(border).
-		Width(usable - 2).
+		Width(cw).
 		Render(text)
-}
-
-func cursorGlyph() string {
-	if (time.Now().UnixMilli()/500)%2 == 0 {
-		return lipgloss.NewStyle().Reverse(true).Render(" ")
-	}
-	return " "
-}
-
-func (p serversPanel) serverCount() int {
-	n := 0
-	for _, s := range p.subs {
-		n += len(s.Servers)
-	}
-	return n
 }
 
 func (p serversPanel) render(width, height int) string {
@@ -95,12 +102,22 @@ func (p serversPanel) render(width, height int) string {
 			Render(p.tr.NoSubs + "\n" + p.tr.AddSubHint)
 		blocks = append(blocks, "", empty)
 	} else {
-		idx := 0
-		for _, sub := range p.subs {
-			blocks = append(blocks, p.subCard(sub, usable))
-			for _, srv := range sub.Servers {
-				blocks = append(blocks, p.serverCard(srv, usable, idx == p.cursor))
-				idx++
+		sel := selItem{-1, -1}
+		if items := p.items(); p.cursor >= 0 && p.cursor < len(items) {
+			sel = items[p.cursor]
+		}
+		for si, sub := range p.subs {
+			headSel := p.serversFocused && sel.subIdx == si && sel.srvIdx == -1
+			blocks = append(blocks, p.subCard(sub, usable, headSel))
+
+			var rows []string
+			for ri, srv := range sub.Servers {
+				srvSel := p.serversFocused && sel.subIdx == si && sel.srvIdx == ri
+				rows = append(rows, p.serverCard(srv, usable-2, srvSel))
+			}
+			if len(rows) > 0 {
+				block := lipgloss.JoinVertical(lipgloss.Left, rows...)
+				blocks = append(blocks, lipgloss.NewStyle().PaddingLeft(1).Render(block))
 			}
 			blocks = append(blocks, "")
 		}
@@ -110,10 +127,14 @@ func (p serversPanel) render(width, height int) string {
 	return lipgloss.NewStyle().PaddingTop(1).PaddingLeft(2).Render(body)
 }
 
-func (p serversPanel) subCard(s subscription.Subscription, usable int) string {
+func (p serversPanel) subCard(s subscription.Subscription, usable int, selected bool) string {
 	bodyW := usable - 4
 	if bodyW < 1 {
 		bodyW = 1
+	}
+	border := panelDim
+	if selected {
+		border = btnGray
 	}
 
 	name := spread("⌄ "+lipgloss.NewStyle().Bold(true).Render(s.Name), "", bodyW)
@@ -129,27 +150,100 @@ func (p serversPanel) subCard(s subscription.Subscription, usable int) string {
 	if s.Note != "" {
 		lines = append(lines, panelFaint.Italic(true).Render(spread(s.Note, "", bodyW)))
 	}
-	return cardBox(lines, panelDim, usable)
+	return cardBox(lines, border, usable)
 }
 
-func (p serversPanel) serverCard(s subscription.Server, usable int, selected bool) string {
-	bodyW := usable - 4
+func (p serversPanel) serverCard(s subscription.Server, w int, selected bool) string {
+	bodyW := w - 4
 	if bodyW < 1 {
 		bodyW = 1
 	}
-
 	border := panelDim
-	bar := "  "
 	nameSt := lipgloss.NewStyle().Bold(true)
 	if selected {
-		border = panelAccent
-		bar = lipgloss.NewStyle().Foreground(panelAccent).Render("▌ ")
-		nameSt = nameSt.Foreground(panelAccent)
+		border = btnGray
+		nameSt = nameSt.Foreground(btnGray)
 	}
 
-	top := spread(bar+s.Flag+" "+nameSt.Render(s.Name), pingSt.Render(fmt.Sprintf("%dms", s.PingMs))+" ›", bodyW)
-	proto := panelFaint.Render(spread("   "+s.Protocol, "", bodyW))
-	return cardBox([]string{top, proto}, border, usable)
+	flag, name := splitFlag(s.Name)
+
+	ping := panelFaint.Render("›")
+	if s.PingMs > 0 {
+		ping = pingSt.Render(fmt.Sprintf("%dms", s.PingMs)) + " ›"
+	}
+
+	proto := strings.ToLower(s.Protocol)
+	if isJSONConfig(s.Raw) {
+		proto += " / json"
+	}
+
+	textW := bodyW
+	if flag != "" {
+		textW -= lipgloss.Width(flag) + 1
+	}
+	if textW < 1 {
+		textW = 1
+	}
+
+	nameLine := spread(nameSt.Render(name), ping, textW)
+	protoLine := panelFaint.Render(spread(proto, "", textW))
+	content := lipgloss.JoinVertical(lipgloss.Left, nameLine, protoLine)
+
+	if flag != "" {
+		flagCol := lipgloss.Place(lipgloss.Width(flag), lipgloss.Height(content), lipgloss.Center, lipgloss.Center, flag)
+		content = lipgloss.JoinHorizontal(lipgloss.Top, flagCol, " ", content)
+	}
+
+	lines := strings.Split(content, "\n")
+	for i, ln := range lines {
+		lines[i] = " " + padLine(ln, bodyW) + " "
+	}
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder(), false, true, true, true).
+		BorderForeground(border).
+		Width(w - 2).
+		Render(strings.Join(lines, "\n"))
+}
+
+func splitFlag(name string) (string, string) {
+	runes := []rune(name)
+	n := flagLen(runes)
+	if n == 0 {
+		return "", name
+	}
+	rest := strings.TrimSpace(string(runes[n:]))
+	if rest == "" {
+		return "", name
+	}
+	return string(runes[:n]), rest
+}
+
+func flagLen(runes []rune) int {
+	if len(runes) >= 2 && isRegional(runes[0]) && isRegional(runes[1]) {
+		return 2
+	}
+	if len(runes) > 0 && (runes[0] == 0x1F3F4 || runes[0] == 0x1F3F3) {
+		n := 1
+		for n < len(runes) {
+			switch r := runes[n]; {
+			case r == 0x200D, r == 0xFE0F, r == 0x2620, r == 0x1F308, r >= 0xE0020 && r <= 0xE007F:
+				n++
+			default:
+				return n
+			}
+		}
+		return n
+	}
+	return 0
+}
+
+func isRegional(r rune) bool {
+	return r >= 0x1F1E6 && r <= 0x1F1FF
+}
+
+func isJSONConfig(raw string) bool {
+	s := strings.TrimSpace(raw)
+	return strings.HasPrefix(s, "{") || strings.HasPrefix(s, "[")
 }
 
 func cardBox(lines []string, border lipgloss.Color, usable int) string {
