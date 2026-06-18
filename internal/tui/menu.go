@@ -238,6 +238,12 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.panel.cursor = 0
 				}
 				return m, nil
+			case "left":
+				if m.panel.search.cursorPos == 0 {
+					m.focus = focusConnect
+					m.panel.focused = false
+					return m, nil
+				}
 			case "down":
 				if m.panel.search.value == "" {
 					if m.panel.itemCount() > 0 {

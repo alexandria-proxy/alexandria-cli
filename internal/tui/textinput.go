@@ -47,7 +47,7 @@ func (t *textInput) handleKey(msg tea.KeyMsg, cw int) bool {
 		r := []rune(t.value)
 		cp := clampInt(t.cursorPos, 0, len(r))
 		t.value = string(r[:cp])
-	case "ctrl+backspace":
+	case "ctrl+w", "ctrl+h", "ctrl+backspace":
 		t.deleteWord()
 	case "backspace":
 		t.backspace()
