@@ -114,6 +114,13 @@ func parseHeaders(h http.Header, sub *Subscription) {
 
 func parseBody(b []byte) []Server {
 	text := strings.TrimSpace(string(b))
+
+	if strings.HasPrefix(text, "[") || strings.HasPrefix(text, "{") {
+		if servers := parseJSONConfigs(text); len(servers) > 0 {
+			return servers
+		}
+	}
+
 	if dec, ok := decodeB64(text); ok && strings.Contains(dec, "://") {
 		text = dec
 	}
@@ -129,6 +136,80 @@ func parseBody(b []byte) []Server {
 		}
 	}
 	return servers
+}
+
+func parseJSONConfigs(text string) []Server {
+	var arr []json.RawMessage
+	if json.Unmarshal([]byte(text), &arr) == nil {
+		var out []Server
+		for _, c := range arr {
+			if s, ok := parseXrayConfig(c); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	if s, ok := parseXrayConfig(json.RawMessage(text)); ok {
+		return []Server{s}
+	}
+	return nil
+}
+
+func parseXrayConfig(raw json.RawMessage) (Server, bool) {
+	var cfg struct {
+		Remarks   string `json:"remarks"`
+		Outbounds []struct {
+			Protocol       string `json:"protocol"`
+			StreamSettings struct {
+				Network  string `json:"network"`
+				Security string `json:"security"`
+			} `json:"streamSettings"`
+			Settings struct {
+				Vnext   []endpoint `json:"vnext"`
+				Servers []endpoint `json:"servers"`
+			} `json:"settings"`
+		} `json:"outbounds"`
+	}
+	if json.Unmarshal(raw, &cfg) != nil {
+		return Server{}, false
+	}
+
+	for _, ob := range cfg.Outbounds {
+		if !isProxyProto(ob.Protocol) {
+			continue
+		}
+		host, port := "", 0
+		if len(ob.Settings.Vnext) > 0 {
+			host, port = ob.Settings.Vnext[0].Address, ob.Settings.Vnext[0].Port
+		} else if len(ob.Settings.Servers) > 0 {
+			host, port = ob.Settings.Servers[0].Address, ob.Settings.Servers[0].Port
+		}
+		name := cfg.Remarks
+		if name == "" {
+			name = host
+		}
+		return Server{
+			Name:     name,
+			Host:     host,
+			Port:     port,
+			Protocol: chainLabel(strings.ToUpper(ob.Protocol), ob.StreamSettings.Network, ob.StreamSettings.Security),
+			Raw:      string(raw),
+		}, true
+	}
+	return Server{}, false
+}
+
+type endpoint struct {
+	Address string `json:"address"`
+	Port    int    `json:"port"`
+}
+
+func isProxyProto(p string) bool {
+	switch p {
+	case "vless", "vmess", "trojan", "shadowsocks":
+		return true
+	}
+	return false
 }
 
 func parseLink(link string) (Server, bool) {
