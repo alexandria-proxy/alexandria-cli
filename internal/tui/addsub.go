@@ -11,118 +11,118 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-type addField int
+type addfield int
 
 const (
-	fieldType addField = iota
-	fieldName
-	fieldURL
-	fieldSubmit
-	fieldCount
+	fieldtype addfield = iota
+	fieldname
+	fieldurl
+	fieldsubmit
+	fieldcount
 )
 
-type formResult int
+type formresult int
 
 const (
-	formNone formResult = iota
-	formCancel
-	formSubmit
+	formnone formresult = iota
+	formcancel
+	formsubmit
 )
 
-type addForm struct {
+type addform struct {
 	tr        i18n.Strings
-	focus     addField
-	typeIdx   int
-	typeOpen  bool
-	optCursor int
-	name      textInput
-	url       textInput
+	focus     addfield
+	typeidx   int
+	typeopen  bool
+	optcursor int
+	name      textinput
+	url       textinput
 	loading   bool
 	err       string
 }
 
-func newAddForm(tr i18n.Strings) addForm {
-	return addForm{tr: tr}
+func newaddform(tr i18n.Strings) addform {
+	return addform{tr: tr}
 }
 
-func (f addForm) typeOptions() []string {
+func (f addform) typeoptions() []string {
 	return []string{f.tr.TypeSubscription, f.tr.TypeConfig, f.tr.TypeJSON}
 }
 
-func (f addForm) update(msg tea.KeyMsg, cw int) (addForm, formResult) {
+func (f addform) update(msg tea.KeyMsg, cw int) (addform, formresult) {
 	s := msg.String()
 
-	if f.focus == fieldType && f.typeOpen {
-		n := len(f.typeOptions())
+	if f.focus == fieldtype && f.typeopen {
+		n := len(f.typeoptions())
 		switch s {
 		case "up":
-			f.optCursor = (f.optCursor - 1 + n) % n
+			f.optcursor = (f.optcursor - 1 + n) % n
 		case "down":
-			f.optCursor = (f.optCursor + 1) % n
+			f.optcursor = (f.optcursor + 1) % n
 		case "enter", " ":
-			f.typeIdx = f.optCursor
-			f.typeOpen = false
+			f.typeidx = f.optcursor
+			f.typeopen = false
 		case "esc", "left":
-			f.typeOpen = false
+			f.typeopen = false
 		}
-		return f, formNone
+		return f, formnone
 	}
 
-	if f.focus == fieldName && f.name.handleKey(msg, cw) {
-		return f, formNone
+	if f.focus == fieldname && f.name.handlekey(msg, cw) {
+		return f, formnone
 	}
-	if f.focus == fieldURL && f.url.handleKey(msg, cw) {
-		return f, formNone
+	if f.focus == fieldurl && f.url.handlekey(msg, cw) {
+		return f, formnone
 	}
 
 	switch s {
 	case "esc":
-		return f, formCancel
+		return f, formcancel
 	case "right":
-		if f.focus == fieldType {
-			f.typeOpen = true
-			f.optCursor = f.typeIdx
+		if f.focus == fieldtype {
+			f.typeopen = true
+			f.optcursor = f.typeidx
 		}
-		return f, formNone
+		return f, formnone
 	case "tab", "down", "ctrl+down":
-		f.focus = (f.focus + 1) % fieldCount
-		return f, formNone
+		f.focus = (f.focus + 1) % fieldcount
+		return f, formnone
 	case "shift+tab", "up", "ctrl+up":
-		f.focus = (f.focus - 1 + fieldCount) % fieldCount
-		return f, formNone
+		f.focus = (f.focus - 1 + fieldcount) % fieldcount
+		return f, formnone
 	case "enter":
 		switch f.focus {
-		case fieldType:
-			f.typeOpen = true
-			f.optCursor = f.typeIdx
-		case fieldSubmit:
-			return f, formSubmit
+		case fieldtype:
+			f.typeopen = true
+			f.optcursor = f.typeidx
+		case fieldsubmit:
+			return f, formsubmit
 		default:
-			f.focus = (f.focus + 1) % fieldCount
+			f.focus = (f.focus + 1) % fieldcount
 		}
-		return f, formNone
+		return f, formnone
 	}
-	return f, formNone
+	return f, formnone
 }
 
-func (f addForm) render(width int) string {
+func (f addform) render(width int) string {
 	usable := width - 4
 	if usable < 16 {
 		usable = width
 	}
 
 	parts := []string{
-		panelTitleSt.Render(f.tr.AddSubTitle), "",
-		f.typeField(usable), "",
-		labeledInput(f.tr.FieldName, f.name, f.focus == fieldName, usable), "",
-		labeledInput(f.tr.FieldURL, f.url, f.focus == fieldURL, usable), "",
+		paneltitlest.Render(f.tr.AddSubTitle), "",
+		f.typefield(usable), "",
+		labeledinput(f.tr.FieldName, f.name, f.focus == fieldname, usable), "",
+		labeledinput(f.tr.FieldURL, f.url, f.focus == fieldurl, usable), "",
 	}
 	if f.loading {
 		parts = append(parts, lipgloss.PlaceHorizontal(usable-2, lipgloss.Center, shimmer(f.tr.Fetching)), "")
 	} else if f.err != "" {
-		parts = append(parts, errStyle.Width(usable-2).Render(f.err), "")
+		parts = append(parts, errstyle.Width(usable-2).Render(f.err), "")
 	}
-	parts = append(parts, lipgloss.PlaceHorizontal(usable-2, lipgloss.Center, f.submitButton()))
+	parts = append(parts, lipgloss.PlaceHorizontal(usable-2, lipgloss.Center, f.submitbutton()))
 
 	body := lipgloss.JoinVertical(lipgloss.Left, parts...)
 	return lipgloss.NewStyle().PaddingTop(1).PaddingLeft(2).Render(body)
@@ -152,50 +152,50 @@ func shimmer(text string) string {
 	return b.String()
 }
 
-func (f addForm) typeField(usable int) string {
+func (f addform) typefield(usable int) string {
 	w := usable - 2
-	opts := f.typeOptions()
-	label := fieldLabel(f.tr.FieldType)
+	opts := f.typeoptions()
+	label := fieldlabel(f.tr.FieldType)
 
-	if f.focus == fieldType && f.typeOpen {
+	if f.focus == fieldtype && f.typeopen {
 		rows := make([]string, len(opts))
 		for i, o := range opts {
 			bg, fg := lipgloss.Color("236"), lipgloss.Color("250")
-			if i == f.optCursor {
-				bg, fg = btnGray, lipgloss.Color("16")
+			if i == f.optcursor {
+				bg, fg = btngray, lipgloss.Color("16")
 			}
-			rows[i] = chipLine(o, w, bg, fg)
+			rows[i] = chipline(o, w, bg, fg)
 		}
 		return lipgloss.JoinVertical(lipgloss.Left, label, lipgloss.JoinVertical(lipgloss.Left, rows...))
 	}
 
 	bg, fg := lipgloss.Color("237"), lipgloss.Color("250")
-	if f.focus == fieldType {
-		bg, fg = btnGray, lipgloss.Color("16")
+	if f.focus == fieldtype {
+		bg, fg = btngray, lipgloss.Color("16")
 	}
-	chip := chipLine(spread(opts[f.typeIdx], "▼", w-2), w, bg, fg)
+	chip := chipline(spread(opts[f.typeidx], "▼", w-2), w, bg, fg)
 	return lipgloss.JoinVertical(lipgloss.Left, label, chip)
 }
 
-func (f addForm) submitButton() string {
-	st := connectBtn
-	if f.focus != fieldSubmit {
-		st = connectBtnBlur
+func (f addform) submitbutton() string {
+	st := connectbtn
+	if f.focus != fieldsubmit {
+		st = connectbtnblur
 	}
 	return st.Render(f.tr.AddBtn)
 }
 
-func labeledInput(label string, ti textInput, focused bool, usable int) string {
+func labeledinput(label string, ti textinput, focused bool, usable int) string {
 	cw := usable - 2
 	if cw < 1 {
 		cw = 1
 	}
-	border := panelDim
+	border := paneldim
 	var text string
 	switch {
 	case focused:
-		border = btnGray
-		text = ti.view(cw, true, btnGray)
+		border = btngray
+		text = ti.view(cw, true, btngray)
 	case ti.value != "":
 		text = ti.view(cw, false, lipgloss.Color("252"))
 	}
@@ -204,19 +204,19 @@ func labeledInput(label string, ti textInput, focused bool, usable int) string {
 		BorderForeground(border).
 		Width(cw).
 		Render(text)
-	return lipgloss.JoinVertical(lipgloss.Left, fieldLabel(label), box)
+	return lipgloss.JoinVertical(lipgloss.Left, fieldlabel(label), box)
 }
 
-func chipLine(text string, w int, bg, fg lipgloss.Color) string {
+func chipline(text string, w int, bg, fg lipgloss.Color) string {
 	return lipgloss.NewStyle().
 		Width(w).
 		Background(bg).
 		Foreground(fg).
-		Render(" " + padLine(text, w-2) + " ")
+		Render(" " + padline(text, w-2) + " ")
 }
 
-var errStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#E0A6AC"))
+var errstyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#E0A6AC"))
 
-func fieldLabel(s string) string {
+func fieldlabel(s string) string {
 	return lipgloss.NewStyle().Faint(true).Render(" " + s)
 }

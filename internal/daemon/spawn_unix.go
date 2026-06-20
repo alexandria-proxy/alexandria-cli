@@ -4,6 +4,6 @@ package daemon
 
 import "syscall"
 
-func detachAttr() *syscall.SysProcAttr {
+func detachattr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{Setsid: true}
 }

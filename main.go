@@ -15,13 +15,13 @@ import (
 var version = "0.1.6-dev"
 
 //go:embed core/manifest.json
-var coreManifest []byte
+var coremanifest []byte
 
-func coreVersion() string {
+func coreversion() string {
 	var m struct {
 		Version string `json:"version"`
 	}
-	if json.Unmarshal(coreManifest, &m) == nil && m.Version != "" {
+	if json.Unmarshal(coremanifest, &m) == nil && m.Version != "" {
 		return m.Version
 	}
 	return "unknown"
@@ -31,22 +31,22 @@ func coreVersion() string {
 var logo string
 
 //go:embed assets/clilogo_mono.txt
-var menuLogoMono string
+var menulogomono string
 
 //go:embed assets/clilogo.txt
-var menuLogoColor string
+var menulogocolor string
 
 func main() {
-	daemonMode := flag.Bool("daemon", false, "run the background daemon (internal use)")
-	showVersion := flag.Bool("version", false, "print version and bail")
+	daemonmode := flag.Bool("daemon", false, "run the background daemon (internal use)")
+	showversion := flag.Bool("version", false, "print version and bail")
 	flag.Parse()
 
-	if *showVersion {
+	if *showversion {
 		fmt.Println("alexandria", version)
 		return
 	}
 
-	if *daemonMode {
+	if *daemonmode {
 		if err := daemon.Run(); err != nil {
 			fmt.Fprintln(os.Stderr, "daemon:", err)
 			os.Exit(1)
@@ -71,7 +71,7 @@ func main() {
 		}
 	}
 
-	if err := tui.RunMenu(cfg.Lang, menuLogoMono, menuLogoColor); err != nil {
+	if err := tui.RunMenu(cfg.Lang, menulogomono, menulogocolor); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}

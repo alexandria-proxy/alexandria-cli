@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	userAgent = "Alexandria"
-	maxBody   = 4 << 20
+	useragent = "Alexandria"
+	maxbody   = 4 << 20
 )
 
 type Server struct {
@@ -41,29 +41,29 @@ type Subscription struct {
 	Servers    []Server      `json:"servers"`
 }
 
-var httpClient = &http.Client{Timeout: 12 * time.Second}
+var httpclient = &http.Client{Timeout: 12 * time.Second}
 
 func Fetch(ctx context.Context, raw string) (Subscription, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
 	if err != nil {
 		return Subscription{}, err
 	}
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", useragent)
 
-	resp, err := httpClient.Do(req)
+	resp, err := httpclient.Do(req)
 	if err != nil {
 		return Subscription{}, err
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxbody))
 	if err != nil {
 		return Subscription{}, err
 	}
 
 	sub := Subscription{URL: raw, UpdatedAt: time.Now()}
-	parseHeaders(resp.Header, &sub)
-	sub.Servers = parseBody(body)
+	parseheaders(resp.Header, &sub)
+	sub.Servers = parsebody(body)
 	if sub.Name == "" {
 		if u, err := url.Parse(raw); err == nil {
 			sub.Name = u.Hostname()
@@ -72,7 +72,7 @@ func Fetch(ctx context.Context, raw string) (Subscription, error) {
 	return sub, nil
 }
 
-func parseHeaders(h http.Header, sub *Subscription) {
+func parseheaders(h http.Header, sub *Subscription) {
 	if info := h.Get("Subscription-Userinfo"); info != "" {
 		var up, down int64
 		for _, part := range strings.Split(info, ";") {
@@ -103,7 +103,7 @@ func parseHeaders(h http.Header, sub *Subscription) {
 	}
 	if title := h.Get("Profile-Title"); title != "" {
 		if strings.HasPrefix(title, "base64:") {
-			if dec, ok := decodeB64(strings.TrimPrefix(title, "base64:")); ok {
+			if dec, ok := decodeb64(strings.TrimPrefix(title, "base64:")); ok {
 				title = dec
 			}
 		}
@@ -111,16 +111,16 @@ func parseHeaders(h http.Header, sub *Subscription) {
 	}
 }
 
-func parseBody(b []byte) []Server {
+func parsebody(b []byte) []Server {
 	text := strings.TrimSpace(string(b))
 
 	if strings.HasPrefix(text, "[") || strings.HasPrefix(text, "{") {
-		if servers := parseJSONConfigs(text); len(servers) > 0 {
+		if servers := parsejsonconfigs(text); len(servers) > 0 {
 			return servers
 		}
 	}
 
-	if dec, ok := decodeB64(text); ok && strings.Contains(dec, "://") {
+	if dec, ok := decodeb64(text); ok && strings.Contains(dec, "://") {
 		text = dec
 	}
 
@@ -130,31 +130,31 @@ func parseBody(b []byte) []Server {
 		if line == "" {
 			continue
 		}
-		if s, ok := parseLink(line); ok {
+		if s, ok := parselink(line); ok {
 			servers = append(servers, s)
 		}
 	}
 	return servers
 }
 
-func parseJSONConfigs(text string) []Server {
+func parsejsonconfigs(text string) []Server {
 	var arr []json.RawMessage
 	if json.Unmarshal([]byte(text), &arr) == nil {
 		var out []Server
 		for _, c := range arr {
-			if s, ok := parseXrayConfig(c); ok {
+			if s, ok := parsexrayconfig(c); ok {
 				out = append(out, s)
 			}
 		}
 		return out
 	}
-	if s, ok := parseXrayConfig(json.RawMessage(text)); ok {
+	if s, ok := parsexrayconfig(json.RawMessage(text)); ok {
 		return []Server{s}
 	}
 	return nil
 }
 
-func parseXrayConfig(raw json.RawMessage) (Server, bool) {
+func parsexrayconfig(raw json.RawMessage) (Server, bool) {
 	var cfg struct {
 		Remarks   string `json:"remarks"`
 		Outbounds []struct {
@@ -174,7 +174,7 @@ func parseXrayConfig(raw json.RawMessage) (Server, bool) {
 	}
 
 	for _, ob := range cfg.Outbounds {
-		if !isProxyProto(ob.Protocol) {
+		if !isproxyproto(ob.Protocol) {
 			continue
 		}
 		host, port := "", 0
@@ -191,7 +191,7 @@ func parseXrayConfig(raw json.RawMessage) (Server, bool) {
 			Name:     name,
 			Host:     host,
 			Port:     port,
-			Protocol: chainLabel(strings.ToUpper(ob.Protocol), ob.StreamSettings.Network, ob.StreamSettings.Security),
+			Protocol: chainlabel(strings.ToUpper(ob.Protocol), ob.StreamSettings.Network, ob.StreamSettings.Security),
 			Raw:      string(raw),
 		}, true
 	}
@@ -203,7 +203,7 @@ type endpoint struct {
 	Port    int    `json:"port"`
 }
 
-func isProxyProto(p string) bool {
+func isproxyproto(p string) bool {
 	switch p {
 	case "vless", "vmess", "trojan", "shadowsocks":
 		return true
@@ -211,19 +211,19 @@ func isProxyProto(p string) bool {
 	return false
 }
 
-func parseLink(link string) (Server, bool) {
+func parselink(link string) (Server, bool) {
 	switch {
 	case strings.HasPrefix(link, "vmess://"):
-		return parseVmess(link)
+		return parsevmess(link)
 	case strings.HasPrefix(link, "vless://"), strings.HasPrefix(link, "trojan://"):
-		return parseURLLink(link)
+		return parseurllink(link)
 	case strings.HasPrefix(link, "ss://"):
-		return parseSS(link)
+		return parsess(link)
 	}
 	return Server{}, false
 }
 
-func parseURLLink(link string) (Server, bool) {
+func parseurllink(link string) (Server, bool) {
 	u, err := url.Parse(link)
 	if err != nil || u.Hostname() == "" {
 		return Server{}, false
@@ -238,13 +238,13 @@ func parseURLLink(link string) (Server, bool) {
 		Name:     name,
 		Host:     u.Hostname(),
 		Port:     port,
-		Protocol: chainLabel(strings.ToUpper(u.Scheme), q.Get("type"), q.Get("security")),
+		Protocol: chainlabel(strings.ToUpper(u.Scheme), q.Get("type"), q.Get("security")),
 		Raw:      link,
 	}, true
 }
 
-func parseVmess(link string) (Server, bool) {
-	dec, ok := decodeB64(strings.TrimPrefix(link, "vmess://"))
+func parsevmess(link string) (Server, bool) {
+	dec, ok := decodeb64(strings.TrimPrefix(link, "vmess://"))
 	if !ok {
 		return Server{}, false
 	}
@@ -265,13 +265,13 @@ func parseVmess(link string) (Server, bool) {
 	return Server{
 		Name:     name,
 		Host:     v.Add,
-		Port:     anyInt(v.Port),
-		Protocol: chainLabel("VMESS", v.Net, v.TLS),
+		Port:     anyint(v.Port),
+		Protocol: chainlabel("VMESS", v.Net, v.TLS),
 		Raw:      link,
 	}, true
 }
 
-func parseSS(link string) (Server, bool) {
+func parsess(link string) (Server, bool) {
 	u, err := url.Parse(link)
 	if err != nil || u.Hostname() == "" {
 		return Server{}, false
@@ -290,7 +290,7 @@ func parseSS(link string) (Server, bool) {
 	}, true
 }
 
-func chainLabel(proto, network, security string) string {
+func chainlabel(proto, network, security string) string {
 	parts := []string{proto}
 	if network != "" {
 		parts = append(parts, strings.ToUpper(network))
@@ -301,7 +301,7 @@ func chainLabel(proto, network, security string) string {
 	return strings.Join(parts, " / ")
 }
 
-func decodeB64(s string) (string, bool) {
+func decodeb64(s string) (string, bool) {
 	s = strings.Map(func(r rune) rune {
 		if r == '\n' || r == '\r' || r == ' ' || r == '\t' {
 			return -1
@@ -319,7 +319,7 @@ func decodeB64(s string) (string, bool) {
 	return "", false
 }
 
-func anyInt(v any) int {
+func anyint(v any) int {
 	switch x := v.(type) {
 	case float64:
 		return int(x)
@@ -338,7 +338,7 @@ func dir() (string, error) {
 	return filepath.Join(base, "alexandria"), nil
 }
 
-func storePath() (string, error) {
+func storepath() (string, error) {
 	d, err := dir()
 	if err != nil {
 		return "", err
@@ -347,7 +347,7 @@ func storePath() (string, error) {
 }
 
 func Load() ([]Subscription, error) {
-	p, err := storePath()
+	p, err := storepath()
 	if err != nil {
 		return nil, err
 	}
@@ -373,7 +373,7 @@ func SaveAll(subs []Subscription) error {
 	if err := os.MkdirAll(d, 0700); err != nil {
 		return err
 	}
-	p, err := storePath()
+	p, err := storepath()
 	if err != nil {
 		return err
 	}

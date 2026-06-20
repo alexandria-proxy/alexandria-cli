@@ -47,13 +47,13 @@ func Listen(path string, h Handler) (net.Listener, error) {
 			if err != nil {
 				return
 			}
-			go serveConn(conn, h)
+			go serveconn(conn, h)
 		}
 	}()
 	return ln, nil
 }
 
-func serveConn(conn net.Conn, h Handler) {
+func serveconn(conn net.Conn, h Handler) {
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
 	var req Request

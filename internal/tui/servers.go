@@ -11,41 +11,41 @@ import (
 )
 
 var (
-	panelAccent  = lipgloss.Color("#6C7BFF")
-	panelDim     = lipgloss.Color("238")
-	panelTitleSt = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("253"))
-	panelFaint   = lipgloss.NewStyle().Faint(true)
-	pingSt       = lipgloss.NewStyle().Foreground(lipgloss.Color("150"))
-	barFullSt    = lipgloss.NewStyle().Foreground(panelAccent)
-	barEmptySt   = lipgloss.NewStyle().Foreground(lipgloss.Color("237"))
+	panelaccent  = lipgloss.Color("#6C7BFF")
+	paneldim     = lipgloss.Color("238")
+	paneltitlest = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("253"))
+	panelfaint   = lipgloss.NewStyle().Faint(true)
+	pingst       = lipgloss.NewStyle().Foreground(lipgloss.Color("150"))
+	barfullst    = lipgloss.NewStyle().Foreground(panelaccent)
+	baremptyst   = lipgloss.NewStyle().Foreground(lipgloss.Color("237"))
 )
 
-type serversPanel struct {
+type serverspanel struct {
 	tr             i18n.Strings
 	subs           []subscription.Subscription
 	cursor         int
-	search         textInput
+	search         textinput
 	focused        bool
-	serversFocused bool
+	serversfocused bool
 }
 
-type selItem struct {
-	subIdx int
-	srvIdx int
+type selitem struct {
+	subidx int
+	srvidx int
 }
 
-func (p serversPanel) items() []selItem {
-	var items []selItem
+func (p serverspanel) items() []selitem {
+	var items []selitem
 	for si, sub := range p.subs {
-		items = append(items, selItem{si, -1})
+		items = append(items, selitem{si, -1})
 		for ri := range sub.Servers {
-			items = append(items, selItem{si, ri})
+			items = append(items, selitem{si, ri})
 		}
 	}
 	return items
 }
 
-func (p serversPanel) itemCount() int {
+func (p serverspanel) itemcount() int {
 	n := 0
 	for _, sub := range p.subs {
 		n += 1 + len(sub.Servers)
@@ -53,25 +53,25 @@ func (p serversPanel) itemCount() int {
 	return n
 }
 
-func newServersPanel(tr i18n.Strings) serversPanel {
-	return serversPanel{tr: tr}
+func newserverspanel(tr i18n.Strings) serverspanel {
+	return serverspanel{tr: tr}
 }
 
-func (p serversPanel) searchView(usable int) string {
+func (p serverspanel) searchview(usable int) string {
 	cw := usable - 2
 	if cw < 1 {
 		cw = 1
 	}
-	border := panelDim
+	border := paneldim
 	var text string
 	switch {
 	case p.focused:
-		border = btnGray
-		text = p.search.view(cw, true, btnGray)
+		border = btngray
+		text = p.search.view(cw, true, btngray)
 	case p.search.value != "":
 		text = p.search.view(cw, false, lipgloss.Color("252"))
 	default:
-		text = lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(clipRunes(p.tr.SearchHint, cw))
+		text = lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(cliprunes(p.tr.SearchHint, cw))
 	}
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -80,7 +80,7 @@ func (p serversPanel) searchView(usable int) string {
 		Render(text)
 }
 
-func (p serversPanel) render(width, height int) string {
+func (p serverspanel) render(width, height int) string {
 	if width < 8 {
 		return ""
 	}
@@ -89,8 +89,8 @@ func (p serversPanel) render(width, height int) string {
 		usable = width
 	}
 
-	header := panelTitleSt.Render(p.tr.ServersTitle)
-	search := p.searchView(usable)
+	header := paneltitlest.Render(p.tr.ServersTitle)
+	search := p.searchview(usable)
 
 	blocks := []string{header, search}
 
@@ -102,18 +102,18 @@ func (p serversPanel) render(width, height int) string {
 			Render(p.tr.NoSubs + "\n" + p.tr.AddSubHint)
 		blocks = append(blocks, "", empty)
 	} else {
-		sel := selItem{-1, -1}
+		sel := selitem{-1, -1}
 		if items := p.items(); p.cursor >= 0 && p.cursor < len(items) {
 			sel = items[p.cursor]
 		}
 		for si, sub := range p.subs {
-			headSel := p.serversFocused && sel.subIdx == si && sel.srvIdx == -1
-			blocks = append(blocks, p.subCard(sub, usable, headSel))
+			headsel := p.serversfocused && sel.subidx == si && sel.srvidx == -1
+			blocks = append(blocks, p.subcard(sub, usable, headsel))
 
 			var rows []string
 			for ri, srv := range sub.Servers {
-				srvSel := p.serversFocused && sel.subIdx == si && sel.srvIdx == ri
-				rows = append(rows, p.serverCard(srv, usable-2, srvSel))
+				srvsel := p.serversfocused && sel.subidx == si && sel.srvidx == ri
+				rows = append(rows, p.servercard(srv, usable-2, srvsel))
 			}
 			if len(rows) > 0 {
 				block := lipgloss.JoinVertical(lipgloss.Left, rows...)
@@ -127,77 +127,77 @@ func (p serversPanel) render(width, height int) string {
 	return lipgloss.NewStyle().PaddingTop(1).PaddingLeft(2).Render(body)
 }
 
-func (p serversPanel) subCard(s subscription.Subscription, usable int, selected bool) string {
-	bodyW := usable - 4
-	if bodyW < 1 {
-		bodyW = 1
+func (p serverspanel) subcard(s subscription.Subscription, usable int, selected bool) string {
+	bodyw := usable - 4
+	if bodyw < 1 {
+		bodyw = 1
 	}
-	border := panelDim
+	border := paneldim
 	if selected {
-		border = btnGray
+		border = btngray
 	}
 
-	name := spread("⌄ "+lipgloss.NewStyle().Bold(true).Render(s.Name), "", bodyW)
-	meta := panelFaint.Render(spread(
-		s.UpdatedAt.Format("02.01.2006 15:04")+"  ·  "+p.tr.Autoupdate+" "+fmtDur(s.AutoUpdate),
-		"", bodyW))
+	name := spread("⌄ "+lipgloss.NewStyle().Bold(true).Render(s.Name), "", bodyw)
+	meta := panelfaint.Render(spread(
+		s.UpdatedAt.Format("02.01.2006 15:04")+"  ·  "+p.tr.Autoupdate+" "+fmtdur(s.AutoUpdate),
+		"", bodyw))
 	usage := spread(
-		usageBar(s.UsedBytes, s.TotalBytes)+"  "+humanBytes(s.UsedBytes)+" / "+totalLabel(s.TotalBytes),
-		panelFaint.Render(p.tr.Expires+" "+s.Expires.Format("02.01.2006")),
-		bodyW)
+		usagebar(s.UsedBytes, s.TotalBytes)+"  "+humanbytes(s.UsedBytes)+" / "+totallabel(s.TotalBytes),
+		panelfaint.Render(p.tr.Expires+" "+s.Expires.Format("02.01.2006")),
+		bodyw)
 
 	lines := []string{name, meta, usage}
 	if s.Note != "" {
-		lines = append(lines, panelFaint.Italic(true).Render(spread(s.Note, "", bodyW)))
+		lines = append(lines, panelfaint.Italic(true).Render(spread(s.Note, "", bodyw)))
 	}
-	return cardBox(lines, border, usable)
+	return cardbox(lines, border, usable)
 }
 
-func (p serversPanel) serverCard(s subscription.Server, w int, selected bool) string {
-	bodyW := w - 4
-	if bodyW < 1 {
-		bodyW = 1
+func (p serverspanel) servercard(s subscription.Server, w int, selected bool) string {
+	bodyw := w - 4
+	if bodyw < 1 {
+		bodyw = 1
 	}
-	border := panelDim
-	nameSt := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("255"))
-	arrowSt := panelFaint
+	border := paneldim
+	namest := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("255"))
+	arrowst := panelfaint
 	if selected {
-		border = btnGray
-		arrowSt = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("255"))
+		border = btngray
+		arrowst = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("255"))
 	}
 
-	flag, name := splitFlag(s.Name)
+	flag, name := splitflag(s.Name)
 
-	ping := arrowSt.Render("›")
+	ping := arrowst.Render("›")
 	if s.PingMs > 0 {
-		ping = pingSt.Render(fmt.Sprintf("%dms", s.PingMs)) + " " + arrowSt.Render("›")
+		ping = pingst.Render(fmt.Sprintf("%dms", s.PingMs)) + " " + arrowst.Render("›")
 	}
 
 	proto := strings.ToLower(s.Protocol)
-	if isJSONConfig(s.Raw) {
+	if isjsonconfig(s.Raw) {
 		proto += " / json"
 	}
 
-	textW := bodyW
+	textw := bodyw
 	if flag != "" {
-		textW -= lipgloss.Width(flag) + 1
+		textw -= lipgloss.Width(flag) + 1
 	}
-	if textW < 1 {
-		textW = 1
+	if textw < 1 {
+		textw = 1
 	}
 
-	nameLine := spread(nameSt.Render(name), ping, textW)
-	protoLine := panelFaint.Render(spread(proto, "", textW))
-	content := lipgloss.JoinVertical(lipgloss.Left, nameLine, protoLine)
+	nameline := spread(namest.Render(name), ping, textw)
+	protoline := panelfaint.Render(spread(proto, "", textw))
+	content := lipgloss.JoinVertical(lipgloss.Left, nameline, protoline)
 
 	if flag != "" {
-		flagCol := lipgloss.Place(lipgloss.Width(flag), lipgloss.Height(content), lipgloss.Center, lipgloss.Center, flag)
-		content = lipgloss.JoinHorizontal(lipgloss.Top, flagCol, " ", content)
+		flagcol := lipgloss.Place(lipgloss.Width(flag), lipgloss.Height(content), lipgloss.Center, lipgloss.Center, flag)
+		content = lipgloss.JoinHorizontal(lipgloss.Top, flagcol, " ", content)
 	}
 
 	lines := strings.Split(content, "\n")
 	for i, ln := range lines {
-		lines[i] = " " + padLine(ln, bodyW) + " "
+		lines[i] = " " + padline(ln, bodyw) + " "
 	}
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder(), false, true, true, true).
@@ -206,9 +206,9 @@ func (p serversPanel) serverCard(s subscription.Server, w int, selected bool) st
 		Render(strings.Join(lines, "\n"))
 }
 
-func splitFlag(name string) (string, string) {
+func splitflag(name string) (string, string) {
 	runes := []rune(name)
-	n := flagLen(runes)
+	n := flaglen(runes)
 	if n == 0 {
 		return "", name
 	}
@@ -219,8 +219,8 @@ func splitFlag(name string) (string, string) {
 	return string(runes[:n]), rest
 }
 
-func flagLen(runes []rune) int {
-	if len(runes) >= 2 && isRegional(runes[0]) && isRegional(runes[1]) {
+func flaglen(runes []rune) int {
+	if len(runes) >= 2 && isregional(runes[0]) && isregional(runes[1]) {
 		return 2
 	}
 	if len(runes) > 0 && (runes[0] == 0x1F3F4 || runes[0] == 0x1F3F3) {
@@ -238,23 +238,23 @@ func flagLen(runes []rune) int {
 	return 0
 }
 
-func isRegional(r rune) bool {
+func isregional(r rune) bool {
 	return r >= 0x1F1E6 && r <= 0x1F1FF
 }
 
-func isJSONConfig(raw string) bool {
+func isjsonconfig(raw string) bool {
 	s := strings.TrimSpace(raw)
 	return strings.HasPrefix(s, "{") || strings.HasPrefix(s, "[")
 }
 
-func cardBox(lines []string, border lipgloss.Color, usable int) string {
-	bodyW := usable - 4
-	if bodyW < 1 {
-		bodyW = 1
+func cardbox(lines []string, border lipgloss.Color, usable int) string {
+	bodyw := usable - 4
+	if bodyw < 1 {
+		bodyw = 1
 	}
 	out := make([]string, len(lines))
 	for i, ln := range lines {
-		out[i] = " " + padLine(ln, bodyW) + " "
+		out[i] = " " + padline(ln, bodyw) + " "
 	}
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -271,14 +271,14 @@ func spread(left, right string, w int) string {
 	return left + strings.Repeat(" ", g) + right
 }
 
-func padLine(s string, w int) string {
+func padline(s string, w int) string {
 	if d := lipgloss.Width(s); d < w {
 		return s + strings.Repeat(" ", w-d)
 	}
 	return s
 }
 
-func fmtDur(d time.Duration) string {
+func fmtdur(d time.Duration) string {
 	h := int(d.Hours())
 	if h >= 24 && h%24 == 0 {
 		return fmt.Sprintf("%dd", h/24)
@@ -286,7 +286,7 @@ func fmtDur(d time.Duration) string {
 	return fmt.Sprintf("%dh", h)
 }
 
-func humanBytes(n int64) string {
+func humanbytes(n int64) string {
 	switch {
 	case n >= 1<<40:
 		return fmt.Sprintf("%.1f TB", float64(n)/(1<<40))
@@ -299,14 +299,14 @@ func humanBytes(n int64) string {
 	}
 }
 
-func totalLabel(n int64) string {
+func totallabel(n int64) string {
 	if n <= 0 {
 		return "∞"
 	}
-	return humanBytes(n)
+	return humanbytes(n)
 }
 
-func usageBar(used, total int64) string {
+func usagebar(used, total int64) string {
 	const seg = 10
 	frac := 0.12
 	if total > 0 {
@@ -316,5 +316,5 @@ func usageBar(used, total int64) string {
 		frac = 1
 	}
 	full := int(frac*seg + 0.5)
-	return barFullSt.Render(strings.Repeat("▰", full)) + barEmptySt.Render(strings.Repeat("▱", seg-full))
+	return barfullst.Render(strings.Repeat("▰", full)) + baremptyst.Render(strings.Repeat("▱", seg-full))
 }

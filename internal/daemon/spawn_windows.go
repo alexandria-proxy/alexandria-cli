@@ -5,14 +5,14 @@ package daemon
 import "syscall"
 
 const (
-	detachedProcess       = 0x00000008
-	createNewProcessGroup = 0x00000200
-	createNoWindow        = 0x08000000
+	detachedprocess       = 0x00000008
+	createnewprocessgroup = 0x00000200
+	createnowindow        = 0x08000000
 )
 
-func detachAttr() *syscall.SysProcAttr {
+func detachattr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{
-		CreationFlags: detachedProcess | createNewProcessGroup | createNoWindow,
+		CreationFlags: detachedprocess | createnewprocessgroup | createnowindow,
 		HideWindow:    true,
 	}
 }

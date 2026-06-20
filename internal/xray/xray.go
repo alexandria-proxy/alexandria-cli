@@ -11,16 +11,16 @@ import (
 var ErrNotFound = errors.New("xray core not found alongside alexandria")
 
 // set via ldflags for distro packages that drop xray in a libexec dir (e.g. /usr/lib/alexandria)
-var libexecDir string
+var libexecdir string
 
-func binName() string {
+func binname() string {
 	if runtime.GOOS == "windows" {
 		return "xray.exe"
 	}
 	return "xray"
 }
 
-func binDir() (string, error) {
+func bindir() (string, error) {
 	base, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
@@ -29,19 +29,19 @@ func binDir() (string, error) {
 }
 
 func Locate() string {
-	name := binName()
+	name := binname()
 	if exe, err := os.Executable(); err == nil {
-		if p := filepath.Join(filepath.Dir(exe), name); isExec(p) {
+		if p := filepath.Join(filepath.Dir(exe), name); isexec(p) {
 			return p
 		}
 	}
-	if libexecDir != "" {
-		if p := filepath.Join(libexecDir, name); isExec(p) {
+	if libexecdir != "" {
+		if p := filepath.Join(libexecdir, name); isexec(p) {
 			return p
 		}
 	}
-	if d, err := binDir(); err == nil {
-		if p := filepath.Join(d, name); isExec(p) {
+	if d, err := bindir(); err == nil {
+		if p := filepath.Join(d, name); isexec(p) {
 			return p
 		}
 	}
@@ -51,7 +51,7 @@ func Locate() string {
 	return ""
 }
 
-func isExec(p string) bool {
+func isexec(p string) bool {
 	fi, err := os.Stat(p)
 	if err != nil || fi.IsDir() {
 		return false

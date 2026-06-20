@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-type jsonEditor struct {
+type jsoneditor struct {
 	lines  []string
 	row    int
 	col    int
@@ -15,21 +15,21 @@ type jsonEditor struct {
 	hoff   int
 }
 
-func newJSONEditor(s string) jsonEditor {
+func newjsoneditor(s string) jsoneditor {
 	lines := strings.Split(s, "\n")
 	if len(lines) == 0 {
 		lines = []string{""}
 	}
-	return jsonEditor{lines: lines}
+	return jsoneditor{lines: lines}
 }
 
-func (e jsonEditor) value() string { return strings.Join(e.lines, "\n") }
+func (e jsoneditor) value() string { return strings.Join(e.lines, "\n") }
 
-func (e *jsonEditor) line() []rune { return []rune(e.lines[e.row]) }
+func (e *jsoneditor) line() []rune { return []rune(e.lines[e.row]) }
 
-func (e *jsonEditor) setLine(r []rune) { e.lines[e.row] = string(r) }
+func (e *jsoneditor) setline(r []rune) { e.lines[e.row] = string(r) }
 
-func (e *jsonEditor) handleKey(msg tea.KeyMsg, w, h int) {
+func (e *jsoneditor) handlekey(msg tea.KeyMsg, w, h int) {
 	switch msg.String() {
 	case "left":
 		if e.col > 0 {
@@ -48,29 +48,29 @@ func (e *jsonEditor) handleKey(msg tea.KeyMsg, w, h int) {
 	case "up":
 		if e.row > 0 {
 			e.row--
-			e.col = clampInt(e.col, 0, len(e.line()))
+			e.col = clampint(e.col, 0, len(e.line()))
 		}
 	case "down":
 		if e.row < len(e.lines)-1 {
 			e.row++
-			e.col = clampInt(e.col, 0, len(e.line()))
+			e.col = clampint(e.col, 0, len(e.line()))
 		}
 	case "home", "ctrl+a":
 		e.col = 0
 	case "end", "ctrl+e":
 		e.col = len(e.line())
 	case "ctrl+left", "alt+b":
-		e.wordLeft()
+		e.wordleft()
 	case "ctrl+right", "alt+f":
-		e.wordRight()
+		e.wordright()
 	case "enter":
 		e.newline()
 	case "backspace":
 		e.backspace()
 	case "ctrl+w", "ctrl+h", "ctrl+backspace", "alt+backspace":
-		e.deleteWord()
+		e.deleteword()
 	case "alt+d":
-		e.deleteWordForward()
+		e.deletewordforward()
 	case "tab":
 		e.insert("  ")
 	case " ":
@@ -83,21 +83,21 @@ func (e *jsonEditor) handleKey(msg tea.KeyMsg, w, h int) {
 	e.clamp(w, h)
 }
 
-func (e *jsonEditor) insert(s string) {
+func (e *jsoneditor) insert(s string) {
 	r := e.line()
-	cp := clampInt(e.col, 0, len(r))
+	cp := clampint(e.col, 0, len(r))
 	ins := []rune(s)
 	out := make([]rune, 0, len(r)+len(ins))
 	out = append(out, r[:cp]...)
 	out = append(out, ins...)
 	out = append(out, r[cp:]...)
-	e.setLine(out)
+	e.setline(out)
 	e.col = cp + len(ins)
 }
 
-func (e *jsonEditor) newline() {
+func (e *jsoneditor) newline() {
 	r := e.line()
-	cp := clampInt(e.col, 0, len(r))
+	cp := clampint(e.col, 0, len(r))
 	head, tail := string(r[:cp]), string(r[cp:])
 	e.lines[e.row] = head
 	rest := append([]string{tail}, e.lines[e.row+1:]...)
@@ -106,11 +106,11 @@ func (e *jsonEditor) newline() {
 	e.col = 0
 }
 
-func (e *jsonEditor) backspace() {
+func (e *jsoneditor) backspace() {
 	r := e.line()
-	cp := clampInt(e.col, 0, len(r))
+	cp := clampint(e.col, 0, len(r))
 	if cp > 0 {
-		e.setLine(append(r[:cp-1], r[cp:]...))
+		e.setline(append(r[:cp-1], r[cp:]...))
 		e.col = cp - 1
 		return
 	}
@@ -124,74 +124,74 @@ func (e *jsonEditor) backspace() {
 	e.row--
 }
 
-func (e *jsonEditor) deleteWord() {
+func (e *jsoneditor) deleteword() {
 	r := e.line()
-	cp := clampInt(e.col, 0, len(r))
+	cp := clampint(e.col, 0, len(r))
 	if cp == 0 {
 		e.backspace()
 		return
 	}
 	i := cp
-	for i > 0 && isWordSep(r[i-1]) {
+	for i > 0 && iswordsep(r[i-1]) {
 		i--
 	}
-	for i > 0 && !isWordSep(r[i-1]) {
+	for i > 0 && !iswordsep(r[i-1]) {
 		i--
 	}
-	e.setLine(append(r[:i], r[cp:]...))
+	e.setline(append(r[:i], r[cp:]...))
 	e.col = i
 }
 
-func (e *jsonEditor) deleteWordForward() {
+func (e *jsoneditor) deletewordforward() {
 	r := e.line()
-	cp := clampInt(e.col, 0, len(r))
+	cp := clampint(e.col, 0, len(r))
 	if cp >= len(r) {
 		return
 	}
 	i := cp
-	for i < len(r) && isWordSep(r[i]) {
+	for i < len(r) && iswordsep(r[i]) {
 		i++
 	}
-	for i < len(r) && !isWordSep(r[i]) {
+	for i < len(r) && !iswordsep(r[i]) {
 		i++
 	}
-	e.setLine(append(r[:cp], r[i:]...))
+	e.setline(append(r[:cp], r[i:]...))
 }
 
-func (e *jsonEditor) wordLeft() {
+func (e *jsoneditor) wordleft() {
 	r := e.line()
-	i := clampInt(e.col, 0, len(r))
-	for i > 0 && isWordSep(r[i-1]) {
+	i := clampint(e.col, 0, len(r))
+	for i > 0 && iswordsep(r[i-1]) {
 		i--
 	}
-	for i > 0 && !isWordSep(r[i-1]) {
+	for i > 0 && !iswordsep(r[i-1]) {
 		i--
 	}
 	e.col = i
 }
 
-func (e *jsonEditor) wordRight() {
+func (e *jsoneditor) wordright() {
 	r := e.line()
 	n := len(r)
-	i := clampInt(e.col, 0, n)
-	for i < n && isWordSep(r[i]) {
+	i := clampint(e.col, 0, n)
+	for i < n && iswordsep(r[i]) {
 		i++
 	}
-	for i < n && !isWordSep(r[i]) {
+	for i < n && !iswordsep(r[i]) {
 		i++
 	}
 	e.col = i
 }
 
-func (e *jsonEditor) clamp(w, h int) {
+func (e *jsoneditor) clamp(w, h int) {
 	if w < 1 {
 		w = 1
 	}
 	if h < 1 {
 		h = 1
 	}
-	e.row = clampInt(e.row, 0, len(e.lines)-1)
-	e.col = clampInt(e.col, 0, len(e.line()))
+	e.row = clampint(e.row, 0, len(e.lines)-1)
+	e.col = clampint(e.col, 0, len(e.line()))
 	if e.row < e.scroll {
 		e.scroll = e.row
 	}
@@ -213,18 +213,18 @@ func (e *jsonEditor) clamp(w, h int) {
 }
 
 var (
-	jsonText   = lipgloss.Color("#ABB2BF")
-	jsonKey    = lipgloss.Color("#61AFEF")
-	jsonString = lipgloss.Color("#98C379")
-	jsonNumber = lipgloss.Color("#D19A66")
-	jsonBool   = lipgloss.Color("#C678DD")
-	jsonPunct  = lipgloss.Color("#7E868D")
+	jsontext   = lipgloss.Color("#ABB2BF")
+	jsonkey    = lipgloss.Color("#61AFEF")
+	jsonstring = lipgloss.Color("#98C379")
+	jsonnumber = lipgloss.Color("#D19A66")
+	jsonbool   = lipgloss.Color("#C678DD")
+	jsonpunct  = lipgloss.Color("#7E868D")
 )
 
-func highlightJSON(r []rune) []lipgloss.Color {
+func highlightjson(r []rune) []lipgloss.Color {
 	cols := make([]lipgloss.Color, len(r))
 	for i := range cols {
-		cols[i] = jsonText
+		cols[i] = jsontext
 	}
 	i := 0
 	for i < len(r) {
@@ -246,16 +246,16 @@ func highlightJSON(r []rune) []lipgloss.Color {
 			for k < len(r) && (r[k] == ' ' || r[k] == '\t') {
 				k++
 			}
-			col := jsonString
+			col := jsonstring
 			if k < len(r) && r[k] == ':' {
-				col = jsonKey
+				col = jsonkey
 			}
 			for x := i; x < j && x < len(r); x++ {
 				cols[x] = col
 			}
 			i = j
 		case c == '{' || c == '}' || c == '[' || c == ']' || c == ',' || c == ':':
-			cols[i] = jsonPunct
+			cols[i] = jsonpunct
 			i++
 		case (c >= '0' && c <= '9') || c == '-':
 			j := i
@@ -263,7 +263,7 @@ func highlightJSON(r []rune) []lipgloss.Color {
 				j++
 			}
 			for x := i; x < j; x++ {
-				cols[x] = jsonNumber
+				cols[x] = jsonnumber
 			}
 			i = j
 		case c == 't' || c == 'f' || c == 'n':
@@ -273,7 +273,7 @@ func highlightJSON(r []rune) []lipgloss.Color {
 			}
 			if w := string(r[i:j]); w == "true" || w == "false" || w == "null" {
 				for x := i; x < j; x++ {
-					cols[x] = jsonBool
+					cols[x] = jsonbool
 				}
 			}
 			i = j
@@ -284,7 +284,7 @@ func highlightJSON(r []rune) []lipgloss.Color {
 	return cols
 }
 
-func (e jsonEditor) view(w, h int, focused bool) string {
+func (e jsoneditor) view(w, h int, focused bool) string {
 	if w < 1 {
 		w = 1
 	}
@@ -301,7 +301,7 @@ func (e jsonEditor) view(w, h int, focused bool) string {
 			continue
 		}
 		r := []rune(e.lines[lr])
-		cols := highlightJSON(r)
+		cols := highlightjson(r)
 		var b strings.Builder
 		for c := e.hoff; c < e.hoff+w; c++ {
 			switch {

@@ -16,83 +16,83 @@ import (
 )
 
 const (
-	revealTick       = 40 * time.Millisecond
-	revealFrames     = 28
-	revealFramesBack = 12
-	revealEdge       = 0.22
-	revealPeak       = 0.85
+	revealtick       = 40 * time.Millisecond
+	revealframes     = 28
+	revealframesback = 12
+	revealedge       = 0.22
+	revealpeak       = 0.85
 
-	idleTick       = 80 * time.Millisecond
-	ringCycle      = 5.0
-	ringSweep      = 1.5
-	ringMax        = 0.85
-	ringWidth      = 0.06
-	ringPeak       = 0.15
-	ringDelay      = 2.0
-	ringRetractDur = 0.18
+	idletick       = 80 * time.Millisecond
+	ringcycle      = 5.0
+	ringsweep      = 1.5
+	ringmax        = 0.85
+	ringwidth      = 0.06
+	ringpeak       = 0.15
+	ringdelay      = 2.0
+	ringretractdur = 0.18
 
-	twoColMin = 96
+	twocolmin = 96
 )
 
 var (
-	connectBtn        = lipgloss.NewStyle().Bold(true).Padding(0, 1).Background(btnGray).Foreground(lipgloss.Color("16"))
-	connectBtnBlur    = lipgloss.NewStyle().Bold(true).Padding(0, 1).Background(lipgloss.Color("#7E868D")).Foreground(lipgloss.Color("237"))
-	disconnectBtn     = lipgloss.NewStyle().Bold(true).Padding(0, 1).Background(lipgloss.Color("#E0A6AC")).Foreground(lipgloss.Color("16"))
-	disconnectBtnBlur = lipgloss.NewStyle().Bold(true).Padding(0, 1).Background(lipgloss.Color("#9C7A7E")).Foreground(lipgloss.Color("237"))
-	timerStyle        = lipgloss.NewStyle().Bold(true).PaddingLeft(2).Foreground(btnGray)
+	connectbtn        = lipgloss.NewStyle().Bold(true).Padding(0, 1).Background(btngray).Foreground(lipgloss.Color("16"))
+	connectbtnblur    = lipgloss.NewStyle().Bold(true).Padding(0, 1).Background(lipgloss.Color("#7E868D")).Foreground(lipgloss.Color("237"))
+	disconnectbtn     = lipgloss.NewStyle().Bold(true).Padding(0, 1).Background(lipgloss.Color("#E0A6AC")).Foreground(lipgloss.Color("16"))
+	disconnectbtnblur = lipgloss.NewStyle().Bold(true).Padding(0, 1).Background(lipgloss.Color("#9C7A7E")).Foreground(lipgloss.Color("237"))
+	timerstyle        = lipgloss.NewStyle().Bold(true).PaddingLeft(2).Foreground(btngray)
 )
 
-type focusZone int
+type focuszone int
 
 const (
-	focusConnect focusZone = iota
-	focusSearch
-	focusServers
+	focusconnect focuszone = iota
+	focussearch
+	focusservers
 )
 
-type panelMode int
+type panelmode int
 
 const (
-	modeList panelMode = iota
-	modeAdd
-	modeEdit
+	modelist panelmode = iota
+	modeadd
+	modeedit
 )
 
-type editZone int
+type editzone int
 
 const (
-	editBody editZone = iota
-	editSave
+	editbody editzone = iota
+	editsave
 )
 
-type menuTickMsg struct{}
+type menutickmsg struct{}
 
-type subsLoadedMsg struct{ subs []subscription.Subscription }
+type subsloadedmsg struct{ subs []subscription.Subscription }
 
-type addResultMsg struct {
+type addresultmsg struct {
 	subs []subscription.Subscription
 	err  string
 }
 
-type editSavedMsg struct {
+type editsavedmsg struct {
 	subs []subscription.Subscription
 	err  string
 }
 
-func saveServerCmd(url string, srvIdx int, raw string) tea.Cmd {
+func saveservercmd(url string, srvidx int, raw string) tea.Cmd {
 	return func() tea.Msg {
-		resp, err := ipc.Send(ipc.Request{Cmd: "update_server", URL: url, SrvIdx: srvIdx, Raw: raw})
+		resp, err := ipc.Send(ipc.Request{Cmd: "update_server", URL: url, SrvIdx: srvidx, Raw: raw})
 		if err != nil {
-			return editSavedMsg{err: err.Error()}
+			return editsavedmsg{err: err.Error()}
 		}
 		if !resp.OK {
-			return editSavedMsg{err: resp.Error}
+			return editsavedmsg{err: resp.Error}
 		}
-		return editSavedMsg{subs: resp.Subscriptions}
+		return editsavedmsg{subs: resp.Subscriptions}
 	}
 }
 
-func prettyJSON(s string) string {
+func prettyjson(s string) string {
 	var v any
 	if json.Unmarshal([]byte(s), &v) != nil {
 		return s
@@ -104,85 +104,85 @@ func prettyJSON(s string) string {
 	return string(b)
 }
 
-func loadSubsCmd() tea.Msg {
+func loadsubscmd() tea.Msg {
 	_ = daemon.Ensure()
 	resp, err := ipc.Send(ipc.Request{Cmd: "list"})
 	if err != nil {
-		return subsLoadedMsg{}
+		return subsloadedmsg{}
 	}
-	return subsLoadedMsg{subs: resp.Subscriptions}
+	return subsloadedmsg{subs: resp.Subscriptions}
 }
 
-func addSubCmd(url string) tea.Cmd {
+func addsubcmd(url string) tea.Cmd {
 	return func() tea.Msg {
 		if err := daemon.Ensure(); err != nil {
-			return addResultMsg{err: err.Error()}
+			return addresultmsg{err: err.Error()}
 		}
 		resp, err := ipc.Send(ipc.Request{Cmd: "add_subscription", URL: url})
 		if err != nil {
-			return addResultMsg{err: err.Error()}
+			return addresultmsg{err: err.Error()}
 		}
 		if !resp.OK {
-			return addResultMsg{err: resp.Error}
+			return addresultmsg{err: resp.Error}
 		}
-		return addResultMsg{subs: resp.Subscriptions}
+		return addresultmsg{subs: resp.Subscriptions}
 	}
 }
 
 type Menu struct {
 	tr         i18n.Strings
-	colorCells [][]cell
-	monoCells  [][]cell
-	logoW      int
+	colorcells [][]cell
+	monocells  [][]cell
+	logow      int
 	connected  bool
 	revealing  bool
 	reverse    bool
 	frame      int
 	since      time.Time
-	ringAt     time.Time
+	ringat     time.Time
 	retracting bool
-	retractAt  time.Time
-	ringFrom   float64
-	ringTo     float64
-	panel      serversPanel
-	focus      focusZone
-	mode       panelMode
-	form       addForm
+	retractat  time.Time
+	ringfrom   float64
+	ringto     float64
+	panel      serverspanel
+	focus      focuszone
+	mode       panelmode
+	form       addform
 	width      int
 	height     int
 	ticking    bool
-	editor     jsonEditor
-	editSubURL string
-	editSrvIdx int
-	editFocus  editZone
-	editErr    string
-	editName   string
-	editProto  string
+	editor     jsoneditor
+	editsuburl string
+	editsrvidx int
+	editfocus  editzone
+	editerr    string
+	editname   string
+	editproto  string
 }
 
 func NewMenu(lang, mono, color string) Menu {
-	monoCells, w := parseLogo(mono)
-	colorCells, _ := parseLogo(color)
+	monocells, w := parselogo(mono)
+	colorcells, _ := parselogo(color)
 	tr := i18n.T(lang)
-	return Menu{tr: tr, monoCells: monoCells, colorCells: colorCells, logoW: w, panel: newServersPanel(tr), ticking: true}
+	return Menu{tr: tr, monocells: monocells, colorcells: colorcells, logow: w, panel: newserverspanel(tr), ticking: true}
 }
 
-func (m Menu) Init() tea.Cmd { return tea.Batch(tea.HideCursor, m.tick(), loadSubsCmd) }
+func (m Menu) Init() tea.Cmd { return tea.Batch(tea.HideCursor, m.tick(), loadsubscmd) }
 
 func (m Menu) tick() tea.Cmd {
-	d := idleTick
+	d := idletick
 	if m.revealing {
-		d = revealTick
+		d = revealtick
 	}
-	return tea.Tick(d, func(time.Time) tea.Msg { return menuTickMsg{} })
+	return tea.Tick(d, func(time.Time) tea.Msg { return menutickmsg{} })
 }
 
 func (m Menu) animating() bool {
 	return m.revealing || m.retracting || m.connected ||
-		m.focus == focusSearch || m.mode == modeAdd
+		m.focus == focussearch || m.mode == modeadd
 }
 
-func (m Menu) withTick(cmd tea.Cmd) (tea.Model, tea.Cmd) {
+func (m Menu) withtick(cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	if m.animating() && !m.ticking {
 		m.ticking = true
 		if cmd == nil {
@@ -195,21 +195,21 @@ func (m Menu) withTick(cmd tea.Cmd) (tea.Model, tea.Cmd) {
 
 func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case menuTickMsg:
+	case menutickmsg:
 		if m.revealing {
 			m.frame++
-			end := revealFrames
+			end := revealframes
 			if m.reverse {
-				end = revealFramesBack
+				end = revealframesback
 			}
 			if m.frame >= end {
 				m.revealing = false
 				if m.connected {
-					m.ringAt = time.Now()
+					m.ringat = time.Now()
 				}
 			}
 		}
-		if m.retracting && time.Since(m.retractAt).Seconds() >= ringRetractDur {
+		if m.retracting && time.Since(m.retractat).Seconds() >= ringretractdur {
 			m.retracting = false
 		}
 		if !m.animating() {
@@ -217,26 +217,26 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, m.tick()
-	case subsLoadedMsg:
+	case subsloadedmsg:
 		m.panel.subs = msg.subs
 		return m, nil
-	case addResultMsg:
+	case addresultmsg:
 		m.form.loading = false
 		if msg.err != "" {
 			m.form.err = msg.err
 			return m, nil
 		}
 		m.panel.subs = msg.subs
-		m.mode = modeList
+		m.mode = modelist
 		return m, nil
-	case editSavedMsg:
+	case editsavedmsg:
 		if msg.err != "" {
-			m.editErr = msg.err
+			m.editerr = msg.err
 			return m, nil
 		}
 		m.panel.subs = msg.subs
-		m.editErr = ""
-		m.mode = modeList
+		m.editerr = ""
+		m.mode = modelist
 		return m, nil
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -245,120 +245,120 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
-		if m.mode == modeEdit {
+		if m.mode == modeedit {
 			switch msg.String() {
 			case "esc":
-				m.mode = modeList
-				m.editErr = ""
-				return m.withTick(nil)
+				m.mode = modelist
+				m.editerr = ""
+				return m.withtick(nil)
 			case "ctrl+s":
-				m.editErr = ""
-				return m.withTick(saveServerCmd(m.editSubURL, m.editSrvIdx, m.editor.value()))
+				m.editerr = ""
+				return m.withtick(saveservercmd(m.editsuburl, m.editsrvidx, m.editor.value()))
 			case "tab", "shift+tab":
-				m.editFocus = (m.editFocus + 1) % 2
-				return m.withTick(nil)
+				m.editfocus = (m.editfocus + 1) % 2
+				return m.withtick(nil)
 			}
-			if m.editFocus == editSave {
+			if m.editfocus == editsave {
 				switch msg.String() {
 				case "enter", " ":
-					m.editErr = ""
-					return m.withTick(saveServerCmd(m.editSubURL, m.editSrvIdx, m.editor.value()))
+					m.editerr = ""
+					return m.withtick(saveservercmd(m.editsuburl, m.editsrvidx, m.editor.value()))
 				case "left", "up":
-					m.editFocus = editBody
-					return m.withTick(nil)
+					m.editfocus = editbody
+					return m.withtick(nil)
 				}
-				return m.withTick(nil)
+				return m.withtick(nil)
 			}
-			ew, eh := m.editorDims()
-			m.editor.handleKey(msg, ew, eh)
-			return m.withTick(nil)
+			ew, eh := m.editordims()
+			m.editor.handlekey(msg, ew, eh)
+			return m.withtick(nil)
 		}
-		if m.mode == modeAdd {
-			f, res := m.form.update(msg, m.searchWidth())
+		if m.mode == modeadd {
+			f, res := m.form.update(msg, m.searchwidth())
 			m.form = f
 			switch res {
-			case formCancel:
-				m.mode = modeList
-			case formSubmit:
+			case formcancel:
+				m.mode = modelist
+			case formsubmit:
 				m.form.err = ""
 				m.form.loading = true
-				return m.withTick(addSubCmd(strings.TrimSpace(m.form.url.value)))
+				return m.withtick(addsubcmd(strings.TrimSpace(m.form.url.value)))
 			}
-			return m.withTick(nil)
+			return m.withtick(nil)
 		}
-		if msg.String() == "ctrl+a" && m.focus != focusSearch && m.width >= twoColMin {
-			m.mode = modeAdd
-			m.form = newAddForm(m.tr)
-			m.focus = focusConnect
+		if msg.String() == "ctrl+a" && m.focus != focussearch && m.width >= twocolmin {
+			m.mode = modeadd
+			m.form = newaddform(m.tr)
+			m.focus = focusconnect
 			m.panel.focused = false
-			return m.withTick(nil)
+			return m.withtick(nil)
 		}
-		if m.focus == focusSearch {
+		if m.focus == focussearch {
 			switch msg.String() {
 			case "ctrl+c":
 				return m, tea.Quit
 			case "tab":
-				m.focus = focusConnect
+				m.focus = focusconnect
 				m.panel.focused = false
 				return m, nil
 			case "esc":
-				m.panel.search = textInput{}
-				if m.panel.itemCount() > 0 {
-					m.focus = focusServers
+				m.panel.search = textinput{}
+				if m.panel.itemcount() > 0 {
+					m.focus = focusservers
 					m.panel.focused = false
-					m.panel.serversFocused = true
+					m.panel.serversfocused = true
 					m.panel.cursor = 0
 				} else {
-					m.focus = focusConnect
+					m.focus = focusconnect
 					m.panel.focused = false
 				}
 				return m, nil
 			case "ctrl+down":
-				if m.panel.itemCount() > 0 {
-					m.focus = focusServers
+				if m.panel.itemcount() > 0 {
+					m.focus = focusservers
 					m.panel.focused = false
-					m.panel.serversFocused = true
+					m.panel.serversfocused = true
 					m.panel.cursor = 0
 				}
 				return m, nil
 			case "left":
-				if m.panel.search.cursorPos == 0 {
-					m.focus = focusConnect
+				if m.panel.search.cursorpos == 0 {
+					m.focus = focusconnect
 					m.panel.focused = false
 					return m, nil
 				}
 			case "down":
 				if m.panel.search.value == "" {
-					if m.panel.itemCount() > 0 {
-						m.focus = focusServers
+					if m.panel.itemcount() > 0 {
+						m.focus = focusservers
 						m.panel.focused = false
-						m.panel.serversFocused = true
+						m.panel.serversfocused = true
 						m.panel.cursor = 0
 					}
 					return m, nil
 				}
 			}
-			m.panel.search.handleKey(msg, m.searchWidth())
+			m.panel.search.handlekey(msg, m.searchwidth())
 			return m, nil
 		}
-		if m.focus == focusServers {
+		if m.focus == focusservers {
 			switch msg.String() {
 			case "esc", "left":
-				m.focus = focusConnect
-				m.panel.serversFocused = false
-				return m.withTick(nil)
+				m.focus = focusconnect
+				m.panel.serversfocused = false
+				return m.withtick(nil)
 			case "up", "k", "ctrl+up":
 				if m.panel.cursor == 0 {
-					m.focus = focusSearch
-					m.panel.serversFocused = false
+					m.focus = focussearch
+					m.panel.serversfocused = false
 					m.panel.focused = true
-					m.panel.search.focusEnd()
-					return m.withTick(nil)
+					m.panel.search.focusend()
+					return m.withtick(nil)
 				}
 				m.panel.cursor--
 				return m, nil
 			case "down", "j", "ctrl+down":
-				if n := m.panel.itemCount(); m.panel.cursor < n-1 {
+				if n := m.panel.itemcount(); m.panel.cursor < n-1 {
 					m.panel.cursor++
 				}
 				return m, nil
@@ -366,20 +366,20 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				items := m.panel.items()
 				if m.panel.cursor >= 0 && m.panel.cursor < len(items) {
 					it := items[m.panel.cursor]
-					if it.srvIdx >= 0 {
-						srv := m.panel.subs[it.subIdx].Servers[it.srvIdx]
-						m.editor = newJSONEditor(prettyJSON(srv.Raw))
-						m.editSubURL = m.panel.subs[it.subIdx].URL
-						m.editSrvIdx = it.srvIdx
-						m.editFocus = editBody
-						m.editErr = ""
-						m.editName = srv.Name
-						m.editProto = strings.ToLower(srv.Protocol)
-						if isJSONConfig(srv.Raw) {
-							m.editProto += " / json"
+					if it.srvidx >= 0 {
+						srv := m.panel.subs[it.subidx].Servers[it.srvidx]
+						m.editor = newjsoneditor(prettyjson(srv.Raw))
+						m.editsuburl = m.panel.subs[it.subidx].URL
+						m.editsrvidx = it.srvidx
+						m.editfocus = editbody
+						m.editerr = ""
+						m.editname = srv.Name
+						m.editproto = strings.ToLower(srv.Protocol)
+						if isjsonconfig(srv.Raw) {
+							m.editproto += " / json"
 						}
-						m.mode = modeEdit
-						return m.withTick(nil)
+						m.mode = modeedit
+						return m.withtick(nil)
 					}
 				}
 				return m, nil
@@ -390,72 +390,72 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "q", "esc":
 			return m, tea.Quit
 		case "right", "tab":
-			if m.width >= twoColMin {
-				if m.panel.itemCount() > 0 {
-					m.focus = focusServers
-					m.panel.serversFocused = true
+			if m.width >= twocolmin {
+				if m.panel.itemcount() > 0 {
+					m.focus = focusservers
+					m.panel.serversfocused = true
 					m.panel.cursor = 0
 				} else {
-					m.focus = focusSearch
+					m.focus = focussearch
 					m.panel.focused = true
-					m.panel.search.focusEnd()
+					m.panel.search.focusend()
 				}
 			}
-			return m.withTick(nil)
+			return m.withtick(nil)
 		case "enter", " ":
 			p := m.phase()
-			rNow, rOn := m.ring()
+			rnow, ron := m.ring()
 			m.connected = !m.connected
 			m.reverse = !m.connected
 			m.revealing = true
 			if m.reverse {
-				m.frame = int(p / 2.0 * float64(revealFramesBack)) // resume from current coverage
+				m.frame = int(p / 2.0 * float64(revealframesback)) // resume from current coverage
 			} else {
-				m.frame = int((2.0 - p) / 2.0 * float64(revealFrames))
+				m.frame = int((2.0 - p) / 2.0 * float64(revealframes))
 			}
-			m.ringAt = time.Time{}
+			m.ringat = time.Time{}
 			if m.connected {
 				m.since = time.Now()
 				m.retracting = false
 			} else {
-				m.retracting = rOn
-				m.ringFrom = rNow
-				m.retractAt = time.Now()
-				if rNow/ringMax > 0.4 {
-					m.ringTo = ringMax + ringWidth
+				m.retracting = ron
+				m.ringfrom = rnow
+				m.retractat = time.Now()
+				if rnow/ringmax > 0.4 {
+					m.ringto = ringmax + ringwidth
 				} else {
-					m.ringTo = 0
+					m.ringto = 0
 				}
 			}
-			return m.withTick(nil)
+			return m.withtick(nil)
 		}
 	}
 	return m, nil
 }
 
 func (m Menu) View() string {
-	if m.mode == modeEdit && m.width > 0 && m.height > 0 {
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.renderEditModal())
+	if m.mode == modeedit && m.width > 0 && m.height > 0 {
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.rendereditmodal())
 	}
 
-	logo := m.renderLogo()
+	logo := m.renderlogo()
 
-	onConnect := m.focus == focusConnect && m.mode == modeList
+	onconnect := m.focus == focusconnect && m.mode == modelist
 	var btn string
 	if m.connected {
-		db := disconnectBtn
-		if !onConnect {
-			db = disconnectBtnBlur
+		db := disconnectbtn
+		if !onconnect {
+			db = disconnectbtnblur
 		}
 		btn = lipgloss.JoinHorizontal(
 			lipgloss.Center,
 			db.Render(m.tr.Disconnect),
-			timerStyle.Render("⏱"+elapsed(time.Since(m.since))),
+			timerstyle.Render("⏱"+elapsed(time.Since(m.since))),
 		)
 	} else {
-		cb := connectBtn
-		if !onConnect {
-			cb = connectBtnBlur
+		cb := connectbtn
+		if !onconnect {
+			cb = connectbtnblur
 		}
 		btn = cb.Render(m.tr.Connect)
 	}
@@ -464,40 +464,40 @@ func (m Menu) View() string {
 	if m.width == 0 || m.height == 0 {
 		return unit
 	}
-	if m.width < twoColMin {
+	if m.width < twocolmin {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, unit)
 	}
 
-	leftW := m.width / 2
-	rightW := m.width - leftW
-	rightContent := m.panel.render(rightW, m.height)
-	if m.mode == modeAdd {
-		rightContent = m.form.render(rightW)
+	leftw := m.width / 2
+	rightw := m.width - leftw
+	rightcontent := m.panel.render(rightw, m.height)
+	if m.mode == modeadd {
+		rightcontent = m.form.render(rightw)
 	}
-	left := lipgloss.Place(leftW, m.height, lipgloss.Center, lipgloss.Center, unit)
-	right := lipgloss.Place(rightW, m.height, lipgloss.Left, lipgloss.Top, rightContent)
+	left := lipgloss.Place(leftw, m.height, lipgloss.Center, lipgloss.Center, unit)
+	right := lipgloss.Place(rightw, m.height, lipgloss.Left, lipgloss.Top, rightcontent)
 	return lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 }
 
-func (m Menu) editModalSize() (int, int) {
-	boxW := m.width * 4 / 5
-	if boxW > 110 {
-		boxW = 110
+func (m Menu) editmodalsize() (int, int) {
+	boxw := m.width * 4 / 5
+	if boxw > 110 {
+		boxw = 110
 	}
-	if boxW < 24 {
-		boxW = max0(m.width - 2)
+	if boxw < 24 {
+		boxw = max0(m.width - 2)
 	}
-	boxH := m.height * 4 / 5
-	if boxH < 10 {
-		boxH = max0(m.height - 2)
+	boxh := m.height * 4 / 5
+	if boxh < 10 {
+		boxh = max0(m.height - 2)
 	}
-	return boxW, boxH
+	return boxw, boxh
 }
 
-func (m Menu) editorDims() (int, int) {
-	boxW, boxH := m.editModalSize()
-	w := boxW - 6
-	h := boxH - 9
+func (m Menu) editordims() (int, int) {
+	boxw, boxh := m.editmodalsize()
+	w := boxw - 6
+	h := boxh - 9
 	if w < 1 {
 		w = 1
 	}
@@ -507,78 +507,78 @@ func (m Menu) editorDims() (int, int) {
 	return w, h
 }
 
-func (m Menu) renderEditModal() string {
-	ew, eh := m.editorDims()
-	innerW := ew + 2
+func (m Menu) rendereditmodal() string {
+	ew, eh := m.editordims()
+	innerw := ew + 2
 
-	title := panelTitleSt.Render(m.tr.EditServerTitle)
-	name := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("255")).PaddingLeft(1).Render(m.editName)
-	proto := panelFaint.PaddingLeft(3).Render(m.editProto)
+	title := paneltitlest.Render(m.tr.EditServerTitle)
+	name := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("255")).PaddingLeft(1).Render(m.editname)
+	proto := panelfaint.PaddingLeft(3).Render(m.editproto)
 
-	editBorder := panelDim
-	if m.editFocus == editBody {
-		editBorder = btnGray
+	editborder := paneldim
+	if m.editfocus == editbody {
+		editborder = btngray
 	}
-	editorBox := lipgloss.NewStyle().
+	editorbox := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(editBorder).
+		BorderForeground(editborder).
 		Width(ew).
-		Render(m.editor.view(ew, eh, m.editFocus == editBody))
+		Render(m.editor.view(ew, eh, m.editfocus == editbody))
 
-	hint := panelFaint.Width(innerW).Render(m.tr.EditHint)
-	if m.editErr != "" {
-		hint = errStyle.Width(innerW).Render(m.editErr)
+	hint := panelfaint.Width(innerw).Render(m.tr.EditHint)
+	if m.editerr != "" {
+		hint = errstyle.Width(innerw).Render(m.editerr)
 	}
 
-	saveSt := connectBtnBlur
-	if m.editFocus == editSave {
-		saveSt = connectBtn
+	savest := connectbtnblur
+	if m.editfocus == editsave {
+		savest = connectbtn
 	}
-	saveBtn := lipgloss.JoinHorizontal(lipgloss.Center, saveSt.Render(m.tr.SaveBtn), panelFaint.Render("(tab)"))
-	save := lipgloss.PlaceHorizontal(innerW, lipgloss.Right, saveBtn)
+	savebtn := lipgloss.JoinHorizontal(lipgloss.Center, savest.Render(m.tr.SaveBtn), panelfaint.Render("(tab)"))
+	save := lipgloss.PlaceHorizontal(innerw, lipgloss.Right, savebtn)
 
-	content := lipgloss.JoinVertical(lipgloss.Left, title, name, proto, editorBox, hint, save)
+	content := lipgloss.JoinVertical(lipgloss.Left, title, name, proto, editorbox, hint, save)
 	return lipgloss.NewStyle().
 		Padding(1, 2).
 		Render(content)
 }
 
-func (m Menu) searchWidth() int {
-	rightW := m.width - m.width/2
-	cw := rightW - 6
+func (m Menu) searchwidth() int {
+	rightw := m.width - m.width/2
+	cw := rightw - 6
 	if cw < 1 {
 		cw = 1
 	}
 	return cw
 }
 
-func (m Menu) renderLogo() string {
-	wf, hf := float64(m.logoW), float64(len(m.colorCells))
+func (m Menu) renderlogo() string {
+	wf, hf := float64(m.logow), float64(len(m.colorcells))
 	phase := m.phase()
-	ringR, ringOn := m.ring()
+	ringr, ringon := m.ring()
 
 	var b strings.Builder
-	for r := range m.colorCells {
-		for c := range m.colorCells[r] {
-			cl := m.colorCells[r][c]
+	for r := range m.colorcells {
+		for c := range m.colorcells[r] {
+			cl := m.colorcells[r][c]
 			if m.revealing {
 				s := float64(c)/wf + float64(r)/hf
 				switch {
 				case s >= phase:
-					if d := s - phase; d < revealEdge && lit(cl.fg, cl.bg) {
-						t := (1 - d/revealEdge) * revealPeak
+					if d := s - phase; d < revealedge && lit(cl.fg, cl.bg) {
+						t := (1 - d/revealedge) * revealpeak
 						cl.fg, cl.bg = boost(cl.fg, t), boost(cl.bg, t)
 					}
-				case r < len(m.monoCells) && c < len(m.monoCells[r]):
-					cl = m.monoCells[r][c]
+				case r < len(m.monocells) && c < len(m.monocells[r]):
+					cl = m.monocells[r][c]
 				}
-			} else if !m.connected && r < len(m.monoCells) && c < len(m.monoCells[r]) {
-				cl = m.monoCells[r][c]
+			} else if !m.connected && r < len(m.monocells) && c < len(m.monocells[r]) {
+				cl = m.monocells[r][c]
 			}
-			if ringOn && lit(cl.fg, cl.bg) {
+			if ringon && lit(cl.fg, cl.bg) {
 				nx, ny := float64(c)/wf-0.5, float64(r)/hf-0.5
-				if d := math.Abs(math.Hypot(nx, ny) - ringR); d < ringWidth {
-					t := (1 - d/ringWidth) * ringPeak
+				if d := math.Abs(math.Hypot(nx, ny) - ringr); d < ringwidth {
+					t := (1 - d/ringwidth) * ringpeak
 					cl.fg, cl.bg = glint(cl.fg, t), glint(cl.bg, t)
 				}
 			}
@@ -586,7 +586,7 @@ func (m Menu) renderLogo() string {
 			b.WriteRune(cl.ch)
 		}
 		b.WriteString("\x1b[0m")
-		if r < len(m.colorCells)-1 {
+		if r < len(m.colorcells)-1 {
 			b.WriteByte('\n')
 		}
 	}
@@ -606,32 +606,32 @@ func glint(c *rgb, t float64) *rgb {
 
 func (m Menu) ring() (float64, bool) {
 	if m.retracting {
-		el := time.Since(m.retractAt).Seconds()
-		if el >= ringRetractDur {
+		el := time.Since(m.retractat).Seconds()
+		if el >= ringretractdur {
 			return 0, false
 		}
-		return m.ringFrom + (m.ringTo-m.ringFrom)*(el/ringRetractDur), true
+		return m.ringfrom + (m.ringto-m.ringfrom)*(el/ringretractdur), true
 	}
-	if !m.connected || m.revealing || m.ringAt.IsZero() {
+	if !m.connected || m.revealing || m.ringat.IsZero() {
 		return 0, false
 	}
-	el := time.Since(m.ringAt).Seconds() - ringDelay
+	el := time.Since(m.ringat).Seconds() - ringdelay
 	if el < 0 {
 		return 0, false
 	}
-	cyc := math.Mod(el, ringCycle)
-	if cyc > ringSweep {
+	cyc := math.Mod(el, ringcycle)
+	if cyc > ringsweep {
 		return 0, false
 	}
-	return cyc / ringSweep * ringMax, true
+	return cyc / ringsweep * ringmax, true
 }
 
 func (m Menu) phase() float64 {
 	switch {
 	case m.revealing && m.reverse:
-		return float64(m.frame) / float64(revealFramesBack) * 2.0
+		return float64(m.frame) / float64(revealframesback) * 2.0
 	case m.revealing:
-		return 2.0 - float64(m.frame)/float64(revealFrames)*2.0
+		return 2.0 - float64(m.frame)/float64(revealframes)*2.0
 	case m.connected:
 		return 0.0
 	default:

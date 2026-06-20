@@ -8,47 +8,47 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-const maxInputRows = 3
+const maxinputrows = 3
 
-type textInput struct {
+type textinput struct {
 	value     string
-	cursorPos int
+	cursorpos int
 	scroll    int
 }
 
-func (t *textInput) focusEnd() { t.cursorPos = t.length() }
+func (t *textinput) focusend() { t.cursorpos = t.length() }
 
-func (t textInput) length() int { return len([]rune(t.value)) }
+func (t textinput) length() int { return len([]rune(t.value)) }
 
-func (t *textInput) handleKey(msg tea.KeyMsg, cw int) bool {
+func (t *textinput) handlekey(msg tea.KeyMsg, cw int) bool {
 	handled := true
 	switch msg.String() {
 	case "left":
-		if t.cursorPos > 0 {
-			t.cursorPos--
+		if t.cursorpos > 0 {
+			t.cursorpos--
 		}
 	case "right":
-		if t.cursorPos < t.length() {
-			t.cursorPos++
+		if t.cursorpos < t.length() {
+			t.cursorpos++
 		}
 	case "up":
-		handled = t.moveUp(cw)
+		handled = t.moveup(cw)
 	case "down":
-		handled = t.moveDown(cw)
+		handled = t.movedown(cw)
 	case "ctrl+left":
-		t.moveWordLeft()
+		t.movewordleft()
 	case "ctrl+right":
-		t.moveWordRight()
+		t.movewordright()
 	case "ctrl+a":
-		t.cursorPos = 0
+		t.cursorpos = 0
 	case "ctrl+e":
-		t.cursorPos = t.length()
+		t.cursorpos = t.length()
 	case "ctrl+k":
 		r := []rune(t.value)
-		cp := clampInt(t.cursorPos, 0, len(r))
+		cp := clampint(t.cursorpos, 0, len(r))
 		t.value = string(r[:cp])
 	case "ctrl+w", "ctrl+h", "ctrl+backspace":
-		t.deleteWord()
+		t.deleteword()
 	case "backspace":
 		t.backspace()
 	case " ":
@@ -61,153 +61,153 @@ func (t *textInput) handleKey(msg tea.KeyMsg, cw int) bool {
 		}
 	}
 	if handled {
-		t.clampScroll(cw)
+		t.clampscroll(cw)
 	}
 	return handled
 }
 
-func (t *textInput) insert(s string) {
+func (t *textinput) insert(s string) {
 	r := []rune(t.value)
-	cp := clampInt(t.cursorPos, 0, len(r))
+	cp := clampint(t.cursorpos, 0, len(r))
 	ins := []rune(s)
 	out := make([]rune, 0, len(r)+len(ins))
 	out = append(out, r[:cp]...)
 	out = append(out, ins...)
 	out = append(out, r[cp:]...)
 	t.value = string(out)
-	t.cursorPos = cp + len(ins)
+	t.cursorpos = cp + len(ins)
 }
 
-func (t *textInput) backspace() {
+func (t *textinput) backspace() {
 	r := []rune(t.value)
-	cp := clampInt(t.cursorPos, 0, len(r))
+	cp := clampint(t.cursorpos, 0, len(r))
 	if cp == 0 {
 		return
 	}
 	t.value = string(append(r[:cp-1], r[cp:]...))
-	t.cursorPos = cp - 1
+	t.cursorpos = cp - 1
 }
 
-func (t *textInput) deleteWord() {
+func (t *textinput) deleteword() {
 	r := []rune(t.value)
-	cp := clampInt(t.cursorPos, 0, len(r))
+	cp := clampint(t.cursorpos, 0, len(r))
 	i := cp
-	for i > 0 && isWordSep(r[i-1]) {
+	for i > 0 && iswordsep(r[i-1]) {
 		i--
 	}
-	for i > 0 && !isWordSep(r[i-1]) {
+	for i > 0 && !iswordsep(r[i-1]) {
 		i--
 	}
 	t.value = string(append(r[:i], r[cp:]...))
-	t.cursorPos = i
+	t.cursorpos = i
 }
 
-func (t *textInput) moveUp(cw int) bool {
+func (t *textinput) moveup(cw int) bool {
 	if cw < 1 {
 		cw = 1
 	}
-	if t.cursorPos < cw {
+	if t.cursorpos < cw {
 		return false
 	}
-	t.cursorPos -= cw
+	t.cursorpos -= cw
 	return true
 }
 
-func (t *textInput) moveDown(cw int) bool {
+func (t *textinput) movedown(cw int) bool {
 	if cw < 1 {
 		cw = 1
 	}
 	n := t.length()
-	if t.cursorPos/cw >= n/cw {
+	if t.cursorpos/cw >= n/cw {
 		return false
 	}
-	t.cursorPos += cw
-	if t.cursorPos > n {
-		t.cursorPos = n
+	t.cursorpos += cw
+	if t.cursorpos > n {
+		t.cursorpos = n
 	}
 	return true
 }
 
-func (t *textInput) moveWordLeft() {
+func (t *textinput) movewordleft() {
 	r := []rune(t.value)
-	i := clampInt(t.cursorPos, 0, len(r))
-	for i > 0 && isWordSep(r[i-1]) {
+	i := clampint(t.cursorpos, 0, len(r))
+	for i > 0 && iswordsep(r[i-1]) {
 		i--
 	}
-	for i > 0 && !isWordSep(r[i-1]) {
+	for i > 0 && !iswordsep(r[i-1]) {
 		i--
 	}
-	t.cursorPos = i
+	t.cursorpos = i
 }
 
-func (t *textInput) moveWordRight() {
+func (t *textinput) movewordright() {
 	r := []rune(t.value)
 	n := len(r)
-	i := clampInt(t.cursorPos, 0, n)
-	for i < n && isWordSep(r[i]) {
+	i := clampint(t.cursorpos, 0, n)
+	for i < n && iswordsep(r[i]) {
 		i++
 	}
-	for i < n && !isWordSep(r[i]) {
+	for i < n && !iswordsep(r[i]) {
 		i++
 	}
-	t.cursorPos = i
+	t.cursorpos = i
 }
 
-func (t *textInput) clampScroll(cw int) {
+func (t *textinput) clampscroll(cw int) {
 	if cw < 1 {
 		cw = 1
 	}
 	n := t.length()
-	t.cursorPos = clampInt(t.cursorPos, 0, n)
-	cursorRow := t.cursorPos / cw
-	if cursorRow < t.scroll {
-		t.scroll = cursorRow
+	t.cursorpos = clampint(t.cursorpos, 0, n)
+	cursorrow := t.cursorpos / cw
+	if cursorrow < t.scroll {
+		t.scroll = cursorrow
 	}
-	if cursorRow > t.scroll+maxInputRows-1 {
-		t.scroll = cursorRow - maxInputRows + 1
+	if cursorrow > t.scroll+maxinputrows-1 {
+		t.scroll = cursorrow - maxinputrows + 1
 	}
 	if t.scroll < 0 {
 		t.scroll = 0
 	}
 }
 
-func (t textInput) view(cw int, focused bool, fg lipgloss.Color) string {
+func (t textinput) view(cw int, focused bool, fg lipgloss.Color) string {
 	if cw < 1 {
 		cw = 1
 	}
 	runes := []rune(t.value)
 	n := len(runes)
-	cp := clampInt(t.cursorPos, 0, n)
+	cp := clampint(t.cursorpos, 0, n)
 
 	cells := make([]rune, n)
 	copy(cells, runes)
 	if focused && cp == n {
 		cells = append(cells, ' ')
 	}
-	rows := wrapCells(cells, cw)
-	totalRows := len(rows)
+	rows := wrapcells(cells, cw)
+	totalrows := len(rows)
 
-	cursorRow, cursorCol := cp/cw, cp%cw
+	cursorrow, cursorcol := cp/cw, cp%cw
 
 	scroll := 0
 	if focused {
 		scroll = t.scroll
-		if cursorRow < scroll {
-			scroll = cursorRow
+		if cursorrow < scroll {
+			scroll = cursorrow
 		}
-		if cursorRow > scroll+maxInputRows-1 {
-			scroll = cursorRow - maxInputRows + 1
+		if cursorrow > scroll+maxinputrows-1 {
+			scroll = cursorrow - maxinputrows + 1
 		}
 	}
-	if scroll > max0(totalRows-maxInputRows) {
-		scroll = max0(totalRows - maxInputRows)
+	if scroll > max0(totalrows-maxinputrows) {
+		scroll = max0(totalrows - maxinputrows)
 	}
 	if scroll < 0 {
 		scroll = 0
 	}
-	end := scroll + maxInputRows
-	if end > totalRows {
-		end = totalRows
+	end := scroll + maxinputrows
+	if end > totalrows {
+		end = totalrows
 	}
 
 	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
@@ -222,11 +222,11 @@ func (t textInput) view(cw int, focused bool, fg lipgloss.Color) string {
 			switch {
 			case r == scroll && scroll > 0 && c == 0:
 				b.WriteString(dim.Render("…"))
-			case r == end-1 && end < totalRows && c == len(row)-1:
+			case r == end-1 && end < totalrows && c == len(row)-1:
 				b.WriteString(dim.Render("…"))
 			default:
 				cell := string(row[c])
-				if focused && r == cursorRow && c == cursorCol && blink {
+				if focused && r == cursorrow && c == cursorcol && blink {
 					b.WriteString(lipgloss.NewStyle().Reverse(true).Render(cell))
 				} else {
 					b.WriteString(txt.Render(cell))
@@ -238,7 +238,7 @@ func (t textInput) view(cw int, focused bool, fg lipgloss.Color) string {
 	return strings.Join(lines, "\n")
 }
 
-func wrapCells(cells []rune, cw int) [][]rune {
+func wrapcells(cells []rune, cw int) [][]rune {
 	if cw < 1 {
 		cw = 1
 	}
@@ -256,7 +256,7 @@ func wrapCells(cells []rune, cw int) [][]rune {
 	return rows
 }
 
-func isWordSep(r rune) bool {
+func iswordsep(r rune) bool {
 	switch r {
 	case ' ', '/', '{', '}', '[', ']':
 		return true
@@ -264,7 +264,7 @@ func isWordSep(r rune) bool {
 	return false
 }
 
-func clampInt(v, lo, hi int) int {
+func clampint(v, lo, hi int) int {
 	if v < lo {
 		return lo
 	}
@@ -274,7 +274,7 @@ func clampInt(v, lo, hi int) int {
 	return v
 }
 
-func clipRunes(s string, w int) string {
+func cliprunes(s string, w int) string {
 	r := []rune(s)
 	if len(r) <= w {
 		return s

@@ -126,7 +126,7 @@ func Ensure() error {
 		return err
 	}
 	cmd := exec.Command(exe, "--daemon")
-	cmd.SysProcAttr = detachAttr()
+	cmd.SysProcAttr = detachattr()
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
 	if err := cmd.Start(); err != nil {
 		return err

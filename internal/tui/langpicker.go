@@ -27,28 +27,28 @@ var languages = []language{
 }
 
 var (
-	btnGray     = lipgloss.Color("#B9C2C9")
-	titleStyle  = lipgloss.NewStyle().Bold(true).Foreground(btnGray)
-	optionStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("250")).Padding(0, 1)
-	selBase     = lipgloss.NewStyle().Bold(true).Background(btnGray).Foreground(lipgloss.Color("16"))
-	hintStyle   = lipgloss.NewStyle().Faint(true).PaddingRight(1)
+	btngray     = lipgloss.Color("#B9C2C9")
+	titlestyle  = lipgloss.NewStyle().Bold(true).Foreground(btngray)
+	optionstyle = lipgloss.NewStyle().Foreground(lipgloss.Color("250")).Padding(0, 1)
+	selbase     = lipgloss.NewStyle().Bold(true).Background(btngray).Foreground(lipgloss.Color("16"))
+	hintstyle   = lipgloss.NewStyle().Faint(true).PaddingRight(1)
 )
 
 var (
-	ansiSeq   = regexp.MustCompile(`\x1b\[[0-9;]*m`)
-	cursorSeq = regexp.MustCompile(`\x1b\[\?25[lh]`)
+	ansiseq   = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	cursorseq = regexp.MustCompile(`\x1b\[\?25[lh]`)
 )
 
 const (
-	shineTickRate = 45 * time.Millisecond
-	shinePeriod   = 80 // frames per full cycle
-	shineSweep    = 30 // frames the band actually spends crossing the logo
-	shineBand     = 0.30
-	shinePeak     = 0.92
-	shineFloor    = 24 // colors dimmer than this stay put
+	shinetickrate = 45 * time.Millisecond
+	shineperiod   = 80 // frames per full cycle
+	shinesweep    = 30 // frames the band actually spends crossing the logo
+	shineband     = 0.30
+	shinepeak     = 0.92
+	shinefloor    = 24 // colors dimmer than this stay put
 )
 
-type shineMsg time.Time
+type shinemsg time.Time
 
 type rgb struct{ r, g, b int }
 
@@ -60,7 +60,7 @@ type cell struct {
 
 type LangPicker struct {
 	cells  [][]cell
-	logoW  int
+	logow  int
 	frame  int
 	cursor int
 	chosen string
@@ -69,16 +69,16 @@ type LangPicker struct {
 }
 
 func NewLangPicker(logo string) LangPicker {
-	cells, w := parseLogo(logo)
-	return LangPicker{cells: cells, logoW: w}
+	cells, w := parselogo(logo)
+	return LangPicker{cells: cells, logow: w}
 }
 
-func parseLogo(s string) ([][]cell, int) {
-	lines := strings.Split(trimBlankLines(s), "\n")
+func parselogo(s string) ([][]cell, int) {
+	lines := strings.Split(trimblanklines(s), "\n")
 	cells := make([][]cell, len(lines))
 	w := 0
 	for i, ln := range lines {
-		cells[i] = parseCells(ln)
+		cells[i] = parsecells(ln)
 		if len(cells[i]) > w {
 			w = len(cells[i])
 		}
@@ -86,17 +86,17 @@ func parseLogo(s string) ([][]cell, int) {
 	return cells, w
 }
 
-func (m LangPicker) Init() tea.Cmd { return tea.Batch(tea.HideCursor, shineTick()) }
+func (m LangPicker) Init() tea.Cmd { return tea.Batch(tea.HideCursor, shinetick()) }
 
-func shineTick() tea.Cmd {
-	return tea.Tick(shineTickRate, func(t time.Time) tea.Msg { return shineMsg(t) })
+func shinetick() tea.Cmd {
+	return tea.Tick(shinetickrate, func(t time.Time) tea.Msg { return shinemsg(t) })
 }
 
 func (m LangPicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case shineMsg:
-		m.frame = (m.frame + 1) % shinePeriod
-		return m, shineTick()
+	case shinemsg:
+		m.frame = (m.frame + 1) % shineperiod
+		return m, shinetick()
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		return m, tea.HideCursor
@@ -119,36 +119,36 @@ func (m LangPicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m LangPicker) View() string {
 	tr := i18n.T(languages[m.cursor].code)
 
-	pad := selBase.Render(" ")
+	pad := selbase.Render(" ")
 	rows := make([]string, len(languages))
 	for i, lang := range languages {
 		if i == m.cursor {
-			marker := selBase.Render("●")
-			text := selBase.Width(11).Render(lang.flag + lang.label)
-			rows[i] = pad + marker + selBase.Render(" ") + text
+			marker := selbase.Render("●")
+			text := selbase.Width(11).Render(lang.flag + lang.label)
+			rows[i] = pad + marker + selbase.Render(" ") + text
 		} else {
-			rows[i] = optionStyle.Render("○ " + lang.flag + lang.label)
+			rows[i] = optionstyle.Render("○ " + lang.flag + lang.label)
 		}
 	}
 
-	title := titleStyle.Render(tr.ChooseLanguage)
-	logo := m.renderLogo()
-	logoLines := strings.Split(logo, "\n")
+	title := titlestyle.Render(tr.ChooseLanguage)
+	logo := m.renderlogo()
+	logolines := strings.Split(logo, "\n")
 	top := logo
-	titleRow := title
-	if len(logoLines) > 1 {
-		top = strings.Join(logoLines[:len(logoLines)-1], "\n")
-		titleRow = stampCenter(logoLines[len(logoLines)-1], title, m.logoW)
+	titlerow := title
+	if len(logolines) > 1 {
+		top = strings.Join(logolines[:len(logolines)-1], "\n")
+		titlerow = stampcenter(logolines[len(logolines)-1], title, m.logow)
 	}
 
 	body := lipgloss.JoinVertical(
 		lipgloss.Center,
 		top,
-		titleRow,
+		titlerow,
 		"",
 		lipgloss.JoinVertical(lipgloss.Left, rows...),
 	)
-	hint := hintStyle.Render(tr.Hint)
+	hint := hintstyle.Render(tr.Hint)
 
 	if m.width == 0 || m.height == 0 {
 		return body + "\n" + hint
@@ -160,20 +160,20 @@ func (m LangPicker) View() string {
 
 func (m LangPicker) Chosen() string { return m.chosen }
 
-// renderLogo paints the wordmark and drops the moving glint band on top.
-func (m LangPicker) renderLogo() string {
-	wf, hf := float64(m.logoW), float64(len(m.cells))
-	prog := float64(m.frame) / float64(shineSweep)
-	hi := 2.0 + shineBand
-	phase := hi - prog*(hi+shineBand) // rides from bottom-right down to top-left
+// renderlogo paints the wordmark and drops the moving glint band on top.
+func (m LangPicker) renderlogo() string {
+	wf, hf := float64(m.logow), float64(len(m.cells))
+	prog := float64(m.frame) / float64(shinesweep)
+	hi := 2.0 + shineband
+	phase := hi - prog*(hi+shineband) // rides from bottom-right down to top-left
 
 	var b strings.Builder
 	for r, row := range m.cells {
 		for c, cl := range row {
 			fg, bg := cl.fg, cl.bg
 			s := float64(c)/wf + float64(r)/hf
-			if d := math.Abs(s - phase); d < shineBand && lit(fg, bg) {
-				t := (1 - d/shineBand) * shinePeak
+			if d := math.Abs(s - phase); d < shineband && lit(fg, bg) {
+				t := (1 - d/shineband) * shinepeak
 				fg, bg = boost(fg, t), boost(bg, t)
 			}
 			b.WriteString(sgr(fg, bg, cl.reverse))
@@ -187,13 +187,13 @@ func (m LangPicker) renderLogo() string {
 	return b.String()
 }
 
-func parseCells(line string) []cell {
+func parsecells(line string) []cell {
 	var cells []cell
 	var fg, bg *rgb
 	reverse := false
 	for i := 0; i < len(line); {
-		if loc := ansiSeq.FindStringIndex(line[i:]); loc != nil && loc[0] == 0 {
-			fg, bg, reverse = applySGR(line[i+2:i+loc[1]-1], fg, bg, reverse)
+		if loc := ansiseq.FindStringIndex(line[i:]); loc != nil && loc[0] == 0 {
+			fg, bg, reverse = applysgr(line[i+2:i+loc[1]-1], fg, bg, reverse)
 			i += loc[1]
 			continue
 		}
@@ -204,7 +204,7 @@ func parseCells(line string) []cell {
 	return cells
 }
 
-func applySGR(params string, fg, bg *rgb, rev bool) (*rgb, *rgb, bool) {
+func applysgr(params string, fg, bg *rgb, rev bool) (*rgb, *rgb, bool) {
 	if params == "" {
 		params = "0"
 	}
@@ -234,7 +234,7 @@ func applySGR(params string, fg, bg *rgb, rev bool) (*rgb, *rgb, bool) {
 
 func atoi(s string) int { n, _ := strconv.Atoi(s); return n }
 
-func lit(fg, bg *rgb) bool { return maxc(fg) > shineFloor || maxc(bg) > shineFloor }
+func lit(fg, bg *rgb) bool { return maxc(fg) > shinefloor || maxc(bg) > shinefloor }
 
 func maxc(c *rgb) int {
 	if c == nil {
@@ -275,25 +275,25 @@ func sgr(fg, bg *rgb, rev bool) string {
 	return "\x1b[" + strings.Join(p, ";") + "m"
 }
 
-func stampCenter(base, over string, width int) string {
-	left, leftW := ansiRStrip(base)
-	overW := lipgloss.Width(over)
-	start := (width - overW) / 2
-	if start < leftW+1 {
-		start = leftW + 1 // never collide with the feet
+func stampcenter(base, over string, width int) string {
+	left, leftw := ansirstrip(base)
+	overw := lipgloss.Width(over)
+	start := (width - overw) / 2
+	if start < leftw+1 {
+		start = leftw + 1 // never collide with the feet
 	}
-	gap := strings.Repeat(" ", start-leftW)
-	tail := width - start - overW
+	gap := strings.Repeat(" ", start-leftw)
+	tail := width - start - overw
 	if tail < 0 {
 		tail = 0
 	}
 	return left + "\x1b[0m" + gap + over + strings.Repeat(" ", tail)
 }
 
-func ansiRStrip(s string) (string, int) {
-	var lastIdx, lastCol, col, i int
+func ansirstrip(s string) (string, int) {
+	var lastidx, lastcol, col, i int
 	for i < len(s) {
-		if loc := ansiSeq.FindStringIndex(s[i:]); loc != nil && loc[0] == 0 {
+		if loc := ansiseq.FindStringIndex(s[i:]); loc != nil && loc[0] == 0 {
 			i += loc[1]
 			continue
 		}
@@ -301,18 +301,18 @@ func ansiRStrip(s string) (string, int) {
 		col++
 		i += size
 		if r != ' ' {
-			lastIdx = i
-			lastCol = col
+			lastidx = i
+			lastcol = col
 		}
 	}
-	return s[:lastIdx], lastCol
+	return s[:lastidx], lastcol
 }
 
-func trimBlankLines(s string) string {
-	s = cursorSeq.ReplaceAllString(s, "")
+func trimblanklines(s string) string {
+	s = cursorseq.ReplaceAllString(s, "")
 	lines := strings.Split(s, "\n")
 	for len(lines) > 0 {
-		last := ansiSeq.ReplaceAllString(lines[len(lines)-1], "")
+		last := ansiseq.ReplaceAllString(lines[len(lines)-1], "")
 		if strings.TrimSpace(last) != "" {
 			break
 		}
