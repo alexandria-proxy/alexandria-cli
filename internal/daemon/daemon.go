@@ -59,9 +59,7 @@ func (s *state) handle(req ipc.Request) ipc.Response {
 		return ipc.Response{OK: true, Subscriptions: snapshot}
 
 	case "ensure_core":
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-		defer cancel()
-		path, err := xray.Ensure(ctx)
+		path, err := xray.Ensure()
 		if err != nil {
 			return ipc.Response{Error: err.Error()}
 		}
