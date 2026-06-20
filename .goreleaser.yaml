@@ -1,0 +1,51 @@
+version: 2
+
+project_name: alexandria
+
+before:
+  hooks:
+    - bash scripts/fetch-core.sh --all
+
+builds:
+  - id: alexandria
+    main: .
+    binary: alexandria-cli
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: alexandria
+    ids:
+      - alexandria
+    name_template: "alexandria-{{ .Os }}-{{ .Arch }}"
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - src: "dist/core/{{ .Os }}-{{ .Arch }}/*"
+        dst: "."
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"
+
+release:
+  github:
+    owner: alexandria-proxy
+    name: alexandria-cli

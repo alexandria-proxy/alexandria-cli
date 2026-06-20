@@ -2,6 +2,7 @@ package main
 
 import (
 	_ "embed"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -11,7 +12,20 @@ import (
 	"github.com/alexandria-proxy/alexandria-cli/internal/tui"
 )
 
-const version = "0.1.1-dev"
+var version = "0.1.1-dev"
+
+//go:embed core/manifest.json
+var coreManifest []byte
+
+func coreVersion() string {
+	var m struct {
+		Version string `json:"version"`
+	}
+	if json.Unmarshal(coreManifest, &m) == nil && m.Version != "" {
+		return m.Version
+	}
+	return "unknown"
+}
 
 //go:embed assets/logo.txt
 var logo string
