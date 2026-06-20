@@ -2,6 +2,7 @@
 /alexandria
 /alexandria.exe
 /dist/
+/.cores/
 *.exe
 *.out
 

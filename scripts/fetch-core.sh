@@ -123,7 +123,7 @@ cmd_update() {
 
 cmd_all() {
 	for plat in $PLATFORMS; do
-		install_platform "$plat" "$ROOT/dist/core/$plat"
+		install_platform "$plat" "$ROOT/.cores/$plat"
 	done
 }
 

@@ -36,7 +36,7 @@ archives:
         formats:
           - zip
     files:
-      - src: "dist/core/{{ .Os }}-{{ .Arch }}/*"
+      - src: ".cores/{{ .Os }}-{{ .Arch }}/*"
         dst: "."
 
 checksum:
