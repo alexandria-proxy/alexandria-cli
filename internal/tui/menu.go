@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"strings"
@@ -54,6 +55,14 @@ type panelMode int
 const (
 	modeList panelMode = iota
 	modeAdd
+	modeEdit
+)
+
+type editZone int
+
+const (
+	editBody editZone = iota
+	editSave
 )
 
 type menuTickMsg struct{}
@@ -63,6 +72,36 @@ type subsLoadedMsg struct{ subs []subscription.Subscription }
 type addResultMsg struct {
 	subs []subscription.Subscription
 	err  string
+}
+
+type editSavedMsg struct {
+	subs []subscription.Subscription
+	err  string
+}
+
+func saveServerCmd(url string, srvIdx int, raw string) tea.Cmd {
+	return func() tea.Msg {
+		resp, err := ipc.Send(ipc.Request{Cmd: "update_server", URL: url, SrvIdx: srvIdx, Raw: raw})
+		if err != nil {
+			return editSavedMsg{err: err.Error()}
+		}
+		if !resp.OK {
+			return editSavedMsg{err: resp.Error}
+		}
+		return editSavedMsg{subs: resp.Subscriptions}
+	}
+}
+
+func prettyJSON(s string) string {
+	var v any
+	if json.Unmarshal([]byte(s), &v) != nil {
+		return s
+	}
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return s
+	}
+	return string(b)
 }
 
 func loadSubsCmd() tea.Msg {
@@ -112,6 +151,13 @@ type Menu struct {
 	width      int
 	height     int
 	ticking    bool
+	editor     jsonEditor
+	editSubURL string
+	editSrvIdx int
+	editFocus  editZone
+	editErr    string
+	editName   string
+	editProto  string
 }
 
 func NewMenu(lang, mono, color string) Menu {
@@ -183,12 +229,49 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.panel.subs = msg.subs
 		m.mode = modeList
 		return m, nil
+	case editSavedMsg:
+		if msg.err != "" {
+			m.editErr = msg.err
+			return m, nil
+		}
+		m.panel.subs = msg.subs
+		m.editErr = ""
+		m.mode = modeList
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		return m, tea.HideCursor
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
+		}
+		if m.mode == modeEdit {
+			switch msg.String() {
+			case "esc":
+				m.mode = modeList
+				m.editErr = ""
+				return m.withTick(nil)
+			case "ctrl+s":
+				m.editErr = ""
+				return m.withTick(saveServerCmd(m.editSubURL, m.editSrvIdx, m.editor.value()))
+			case "tab", "shift+tab":
+				m.editFocus = (m.editFocus + 1) % 2
+				return m.withTick(nil)
+			}
+			if m.editFocus == editSave {
+				switch msg.String() {
+				case "enter", " ":
+					m.editErr = ""
+					return m.withTick(saveServerCmd(m.editSubURL, m.editSrvIdx, m.editor.value()))
+				case "left", "up":
+					m.editFocus = editBody
+					return m.withTick(nil)
+				}
+				return m.withTick(nil)
+			}
+			ew, eh := m.editorDims()
+			m.editor.handleKey(msg, ew, eh)
+			return m.withTick(nil)
 		}
 		if m.mode == modeAdd {
 			f, res := m.form.update(msg, m.searchWidth())
@@ -279,6 +362,27 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.panel.cursor++
 				}
 				return m, nil
+			case "enter", "right", "l":
+				items := m.panel.items()
+				if m.panel.cursor >= 0 && m.panel.cursor < len(items) {
+					it := items[m.panel.cursor]
+					if it.srvIdx >= 0 {
+						srv := m.panel.subs[it.subIdx].Servers[it.srvIdx]
+						m.editor = newJSONEditor(prettyJSON(srv.Raw))
+						m.editSubURL = m.panel.subs[it.subIdx].URL
+						m.editSrvIdx = it.srvIdx
+						m.editFocus = editBody
+						m.editErr = ""
+						m.editName = srv.Name
+						m.editProto = strings.ToLower(srv.Protocol)
+						if isJSONConfig(srv.Raw) {
+							m.editProto += " / json"
+						}
+						m.mode = modeEdit
+						return m.withTick(nil)
+					}
+				}
+				return m, nil
 			}
 			return m, nil
 		}
@@ -330,6 +434,10 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Menu) View() string {
+	if m.mode == modeEdit && m.width > 0 && m.height > 0 {
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.renderEditModal())
+	}
+
 	logo := m.renderLogo()
 
 	onConnect := m.focus == focusConnect && m.mode == modeList
@@ -369,6 +477,70 @@ func (m Menu) View() string {
 	left := lipgloss.Place(leftW, m.height, lipgloss.Center, lipgloss.Center, unit)
 	right := lipgloss.Place(rightW, m.height, lipgloss.Left, lipgloss.Top, rightContent)
 	return lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+}
+
+func (m Menu) editModalSize() (int, int) {
+	boxW := m.width * 4 / 5
+	if boxW > 110 {
+		boxW = 110
+	}
+	if boxW < 24 {
+		boxW = max0(m.width - 2)
+	}
+	boxH := m.height * 4 / 5
+	if boxH < 10 {
+		boxH = max0(m.height - 2)
+	}
+	return boxW, boxH
+}
+
+func (m Menu) editorDims() (int, int) {
+	boxW, boxH := m.editModalSize()
+	w := boxW - 6
+	h := boxH - 9
+	if w < 1 {
+		w = 1
+	}
+	if h < 1 {
+		h = 1
+	}
+	return w, h
+}
+
+func (m Menu) renderEditModal() string {
+	ew, eh := m.editorDims()
+	innerW := ew + 2
+
+	title := panelTitleSt.Render(m.tr.EditServerTitle)
+	name := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("255")).PaddingLeft(1).Render(m.editName)
+	proto := panelFaint.PaddingLeft(3).Render(m.editProto)
+
+	editBorder := panelDim
+	if m.editFocus == editBody {
+		editBorder = btnGray
+	}
+	editorBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(editBorder).
+		Width(ew).
+		Render(m.editor.view(ew, eh, m.editFocus == editBody))
+
+	hint := panelFaint.Width(innerW).Render(m.tr.EditHint)
+	if m.editErr != "" {
+		hint = errStyle.Width(innerW).Render(m.editErr)
+	}
+
+	saveSt := connectBtnBlur
+	if m.editFocus == editSave {
+		saveSt = connectBtn
+	}
+	saveBtn := lipgloss.JoinHorizontal(lipgloss.Center, saveSt.Render(m.tr.SaveBtn), panelFaint.Render("(tab)"))
+	save := lipgloss.PlaceHorizontal(innerW, lipgloss.Right, saveBtn)
+
+	content := lipgloss.JoinVertical(lipgloss.Left, title, name, proto, editorBox, hint, save)
+	return lipgloss.NewStyle().
+		Padding(1, 2).
+		Render(content)
 }
 
 func (m Menu) searchWidth() int {

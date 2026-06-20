@@ -91,6 +91,28 @@ func (s *state) handle(req ipc.Request) ipc.Response {
 
 		_ = subscription.SaveAll(snapshot)
 		return ipc.Response{OK: true, Subscriptions: snapshot}
+
+	case "update_server":
+		s.mu.Lock()
+		found := false
+		for i := range s.subs {
+			if s.subs[i].URL != req.URL {
+				continue
+			}
+			if req.SrvIdx >= 0 && req.SrvIdx < len(s.subs[i].Servers) {
+				s.subs[i].Servers[req.SrvIdx].Raw = req.Raw
+				found = true
+			}
+			break
+		}
+		snapshot := append([]subscription.Subscription(nil), s.subs...)
+		s.mu.Unlock()
+
+		if !found {
+			return ipc.Response{Error: "server not found"}
+		}
+		_ = subscription.SaveAll(snapshot)
+		return ipc.Response{OK: true, Subscriptions: snapshot}
 	}
 	return ipc.Response{Error: "unknown command"}
 }

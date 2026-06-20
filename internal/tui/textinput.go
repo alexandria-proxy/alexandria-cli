@@ -256,7 +256,13 @@ func wrapCells(cells []rune, cw int) [][]rune {
 	return rows
 }
 
-func isWordSep(r rune) bool { return r == ' ' || r == '/' }
+func isWordSep(r rune) bool {
+	switch r {
+	case ' ', '/', '{', '}', '[', ']':
+		return true
+	}
+	return false
+}
 
 func clampInt(v, lo, hi int) int {
 	if v < lo {

@@ -22,6 +22,11 @@ type Strings struct {
 	TypeConfig       string
 	TypeJSON         string
 	Fetching         string
+
+	EditServerTitle string
+	JSONLabel       string
+	EditHint        string
+	SaveBtn         string
 }
 
 var table = map[string]Strings{
@@ -46,6 +51,11 @@ var table = map[string]Strings{
 		TypeConfig:       "Configuration",
 		TypeJSON:         "JSON",
 		Fetching:         "Fetching…",
+
+		EditServerTitle: "Edit server configuration",
+		JSONLabel:       "JSON",
+		EditHint:        "A wrong config will break the connection. Edit only if you know what you're doing.",
+		SaveBtn:         "Save",
 	},
 	"ru": {
 		ChooseLanguage: "Выберите язык",
@@ -69,6 +79,11 @@ var table = map[string]Strings{
 		TypeConfig:       "Конфигурация",
 		TypeJSON:         "JSON",
 		Fetching:         "Загрузка…",
+
+		EditServerTitle: "Редактирование конфигурации сервера",
+		JSONLabel:       "JSON",
+		EditHint:        "Неверный конфиг порвёт соединение. Редактируйте только если знаете что делаете.",
+		SaveBtn:         "Сохранить",
 	},
 	"fa": {
 		ChooseLanguage: "زبان را انتخاب کنید",
@@ -92,6 +107,11 @@ var table = map[string]Strings{
 		TypeConfig:       "پیکربندی",
 		TypeJSON:         "JSON",
 		Fetching:         "در حال دریافت…",
+
+		EditServerTitle: "ویرایش پیکربندی سرور",
+		JSONLabel:       "JSON",
+		EditHint:        "پیکربندی نادرست اتصال را قطع می‌کند. فقط اگر می‌دانید چه می‌کنید ویرایش کنید.",
+		SaveBtn:         "ذخیره",
 	},
 }
 

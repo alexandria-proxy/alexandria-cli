@@ -11,8 +11,10 @@ import (
 )
 
 type Request struct {
-	Cmd string `json:"cmd"`
-	URL string `json:"url,omitempty"`
+	Cmd    string `json:"cmd"`
+	URL    string `json:"url,omitempty"`
+	SrvIdx int    `json:"srv_idx,omitempty"`
+	Raw    string `json:"raw,omitempty"`
 }
 
 type Response struct {
