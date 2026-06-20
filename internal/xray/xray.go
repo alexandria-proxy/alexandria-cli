@@ -10,6 +10,9 @@ import (
 
 var ErrNotFound = errors.New("xray core not found alongside alexandria")
 
+// set via ldflags for distro packages that drop xray in a libexec dir (e.g. /usr/lib/alexandria)
+var libexecDir string
+
 func binName() string {
 	if runtime.GOOS == "windows" {
 		return "xray.exe"
@@ -29,6 +32,11 @@ func Locate() string {
 	name := binName()
 	if exe, err := os.Executable(); err == nil {
 		if p := filepath.Join(filepath.Dir(exe), name); isExec(p) {
+			return p
+		}
+	}
+	if libexecDir != "" {
+		if p := filepath.Join(libexecDir, name); isExec(p) {
 			return p
 		}
 	}
