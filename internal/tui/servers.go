@@ -159,17 +159,18 @@ func (p serversPanel) serverCard(s subscription.Server, w int, selected bool) st
 		bodyW = 1
 	}
 	border := panelDim
-	nameSt := lipgloss.NewStyle().Bold(true)
+	nameSt := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("255"))
+	arrowSt := panelFaint
 	if selected {
 		border = btnGray
-		nameSt = nameSt.Foreground(btnGray)
+		arrowSt = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("255"))
 	}
 
 	flag, name := splitFlag(s.Name)
 
-	ping := panelFaint.Render("›")
+	ping := arrowSt.Render("›")
 	if s.PingMs > 0 {
-		ping = pingSt.Render(fmt.Sprintf("%dms", s.PingMs)) + " ›"
+		ping = pingSt.Render(fmt.Sprintf("%dms", s.PingMs)) + " " + arrowSt.Render("›")
 	}
 
 	proto := strings.ToLower(s.Protocol)
