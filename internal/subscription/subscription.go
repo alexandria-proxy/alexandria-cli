@@ -102,13 +102,20 @@ func parseheaders(h http.Header, sub *Subscription) {
 		}
 	}
 	if title := h.Get("Profile-Title"); title != "" {
-		if strings.HasPrefix(title, "base64:") {
-			if dec, ok := decodeb64(strings.TrimPrefix(title, "base64:")); ok {
-				title = dec
-			}
-		}
-		sub.Name = title
+		sub.Name = unb64prefix(title)
 	}
+	if ann := h.Get("Announce"); ann != "" {
+		sub.Note = unb64prefix(ann)
+	}
+}
+
+func unb64prefix(s string) string {
+	if strings.HasPrefix(s, "base64:") {
+		if dec, ok := decodeb64(strings.TrimPrefix(s, "base64:")); ok {
+			return dec
+		}
+	}
+	return s
 }
 
 func parsebody(b []byte) []Server {
