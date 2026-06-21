@@ -27,6 +27,7 @@ type serverspanel struct {
 	search         textinput
 	focused        bool
 	serversfocused bool
+	collapsed      map[string]bool
 }
 
 type selitem struct {
@@ -38,6 +39,9 @@ func (p serverspanel) items() []selitem {
 	var items []selitem
 	for si, sub := range p.subs {
 		items = append(items, selitem{si, -1})
+		if p.collapsed[sub.URL] {
+			continue
+		}
 		for ri := range sub.Servers {
 			items = append(items, selitem{si, ri})
 		}
@@ -48,13 +52,16 @@ func (p serverspanel) items() []selitem {
 func (p serverspanel) itemcount() int {
 	n := 0
 	for _, sub := range p.subs {
-		n += 1 + len(sub.Servers)
+		n++
+		if !p.collapsed[sub.URL] {
+			n += len(sub.Servers)
+		}
 	}
 	return n
 }
 
 func newserverspanel(tr i18n.Strings) serverspanel {
-	return serverspanel{tr: tr}
+	return serverspanel{tr: tr, collapsed: map[string]bool{}}
 }
 
 func (p serverspanel) searchview(usable int) string {
@@ -108,16 +115,19 @@ func (p serverspanel) render(width, height int) string {
 		}
 		for si, sub := range p.subs {
 			headsel := p.serversfocused && sel.subidx == si && sel.srvidx == -1
-			blocks = append(blocks, p.subcard(sub, usable, headsel))
+			collapsed := p.collapsed[sub.URL]
+			blocks = append(blocks, p.subcard(sub, usable, headsel, collapsed))
 
-			var rows []string
-			for ri, srv := range sub.Servers {
-				srvsel := p.serversfocused && sel.subidx == si && sel.srvidx == ri
-				rows = append(rows, p.servercard(srv, usable-2, srvsel))
-			}
-			if len(rows) > 0 {
-				block := lipgloss.JoinVertical(lipgloss.Left, rows...)
-				blocks = append(blocks, lipgloss.NewStyle().PaddingLeft(1).Render(block))
+			if !collapsed {
+				var rows []string
+				for ri, srv := range sub.Servers {
+					srvsel := p.serversfocused && sel.subidx == si && sel.srvidx == ri
+					rows = append(rows, p.servercard(srv, usable-2, srvsel))
+				}
+				if len(rows) > 0 {
+					block := lipgloss.JoinVertical(lipgloss.Left, rows...)
+					blocks = append(blocks, lipgloss.NewStyle().PaddingLeft(1).Render(block))
+				}
 			}
 			blocks = append(blocks, "")
 		}
@@ -127,7 +137,7 @@ func (p serverspanel) render(width, height int) string {
 	return lipgloss.NewStyle().PaddingTop(1).PaddingLeft(2).Render(body)
 }
 
-func (p serverspanel) subcard(s subscription.Subscription, usable int, selected bool) string {
+func (p serverspanel) subcard(s subscription.Subscription, usable int, selected, collapsed bool) string {
 	bodyw := usable - 4
 	if bodyw < 1 {
 		bodyw = 1
@@ -137,7 +147,11 @@ func (p serverspanel) subcard(s subscription.Subscription, usable int, selected 
 		border = btngray
 	}
 
-	name := spread("⌄ "+lipgloss.NewStyle().Bold(true).Render(s.Name), "", bodyw)
+	arrow := "⌄ "
+	if collapsed {
+		arrow = "› "
+	}
+	name := spread(arrow+lipgloss.NewStyle().Bold(true).Render(s.Name), "", bodyw)
 	meta := panelfaint.Render(spread(
 		s.UpdatedAt.Format("02.01.2006 15:04")+"  ·  "+p.tr.Autoupdate+" "+fmtdur(s.AutoUpdate),
 		"", bodyw))
