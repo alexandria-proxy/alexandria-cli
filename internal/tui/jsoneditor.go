@@ -13,6 +13,8 @@ type jsoneditor struct {
 	col    int
 	scroll int
 	hoff   int
+	selrow int
+	selcol int
 }
 
 func newjsoneditor(s string) jsoneditor {
@@ -20,7 +22,7 @@ func newjsoneditor(s string) jsoneditor {
 	if len(lines) == 0 {
 		lines = []string{""}
 	}
-	return jsoneditor{lines: lines}
+	return jsoneditor{lines: lines, selrow: -1}
 }
 
 func (e jsoneditor) value() string { return strings.Join(e.lines, "\n") }
@@ -32,53 +34,164 @@ func (e *jsoneditor) setline(r []rune) { e.lines[e.row] = string(r) }
 func (e *jsoneditor) handlekey(msg tea.KeyMsg, w, h int) {
 	switch msg.String() {
 	case "left":
-		if e.col > 0 {
-			e.col--
-		} else if e.row > 0 {
-			e.row--
-			e.col = len(e.line())
-		}
+		e.clearsel()
+		e.moveleft()
 	case "right":
-		if e.col < len(e.line()) {
-			e.col++
-		} else if e.row < len(e.lines)-1 {
-			e.row++
-			e.col = 0
-		}
+		e.clearsel()
+		e.moveright()
 	case "up":
-		if e.row > 0 {
-			e.row--
-			e.col = clampint(e.col, 0, len(e.line()))
-		}
+		e.clearsel()
+		e.moveup()
 	case "down":
-		if e.row < len(e.lines)-1 {
-			e.row++
-			e.col = clampint(e.col, 0, len(e.line()))
-		}
+		e.clearsel()
+		e.movedown()
+	case "shift+left":
+		e.startsel()
+		e.moveleft()
+	case "shift+right":
+		e.startsel()
+		e.moveright()
+	case "shift+up":
+		e.startsel()
+		e.moveup()
+	case "shift+down":
+		e.startsel()
+		e.movedown()
 	case "home", "ctrl+a":
+		e.clearsel()
 		e.col = 0
 	case "end", "ctrl+e":
+		e.clearsel()
+		e.col = len(e.line())
+	case "shift+home":
+		e.startsel()
+		e.col = 0
+	case "shift+end":
+		e.startsel()
 		e.col = len(e.line())
 	case "ctrl+left", "alt+b":
+		e.clearsel()
 		e.wordleft()
 	case "ctrl+right", "alt+f":
+		e.clearsel()
 		e.wordright()
 	case "enter":
+		e.clearsel()
 		e.newline()
 	case "backspace":
+		e.clearsel()
 		e.backspace()
 	case "ctrl+w", "ctrl+h", "ctrl+backspace", "alt+backspace":
+		e.clearsel()
 		e.deleteword()
 	case "alt+d":
+		e.clearsel()
 		e.deletewordforward()
 	case "tab":
+		e.clearsel()
 		e.insert("  ")
 	case " ":
+		e.clearsel()
 		e.insert(" ")
 	default:
 		if msg.Type == tea.KeyRunes {
+			e.clearsel()
 			e.insert(string(msg.Runes))
 		}
+	}
+	e.clamp(w, h)
+}
+
+func (e *jsoneditor) moveleft() {
+	if e.col > 0 {
+		e.col--
+	} else if e.row > 0 {
+		e.row--
+		e.col = len(e.line())
+	}
+}
+
+func (e *jsoneditor) moveright() {
+	if e.col < len(e.line()) {
+		e.col++
+	} else if e.row < len(e.lines)-1 {
+		e.row++
+		e.col = 0
+	}
+}
+
+func (e *jsoneditor) moveup() {
+	if e.row > 0 {
+		e.row--
+		e.col = clampint(e.col, 0, len(e.line()))
+	}
+}
+
+func (e *jsoneditor) movedown() {
+	if e.row < len(e.lines)-1 {
+		e.row++
+		e.col = clampint(e.col, 0, len(e.line()))
+	}
+}
+
+func (e *jsoneditor) startsel() {
+	if e.selrow < 0 {
+		e.selrow, e.selcol = e.row, e.col
+	}
+}
+
+func (e *jsoneditor) clearsel() { e.selrow = -1 }
+
+func (e *jsoneditor) hassel() bool {
+	return e.selrow >= 0 && (e.selrow != e.row || e.selcol != e.col)
+}
+
+func (e *jsoneditor) selrange() (int, int, int, int) {
+	ar, ac, br, bc := e.selrow, e.selcol, e.row, e.col
+	if ar > br || (ar == br && ac > bc) {
+		ar, ac, br, bc = br, bc, ar, ac
+	}
+	return ar, ac, br, bc
+}
+
+func (e *jsoneditor) selectedtext() string {
+	if !e.hassel() {
+		return ""
+	}
+	ar, ac, br, bc := e.selrange()
+	if ar == br {
+		r := []rune(e.lines[ar])
+		return string(r[clampint(ac, 0, len(r)):clampint(bc, 0, len(r))])
+	}
+	first := []rune(e.lines[ar])
+	parts := []string{string(first[clampint(ac, 0, len(first)):])}
+	for i := ar + 1; i < br; i++ {
+		parts = append(parts, e.lines[i])
+	}
+	last := []rune(e.lines[br])
+	parts = append(parts, string(last[:clampint(bc, 0, len(last))]))
+	return strings.Join(parts, "\n")
+}
+
+func (e *jsoneditor) copytext() string {
+	if e.hassel() {
+		return e.selectedtext()
+	}
+	return e.value()
+}
+
+func (e *jsoneditor) scrollby(d, h int) {
+	e.scroll = clampint(e.scroll+d, 0, max0(len(e.lines)-1))
+	e.row = clampint(e.row, e.scroll, e.scroll+max0(h-1))
+	e.row = clampint(e.row, 0, len(e.lines)-1)
+	e.col = clampint(e.col, 0, len(e.line()))
+}
+
+func (e *jsoneditor) dragextend(dir, w, h int) {
+	if dir < 0 {
+		e.moveup()
+	} else if dir > 0 {
+		e.movedown()
 	}
 	e.clamp(w, h)
 }
@@ -192,6 +305,9 @@ func (e *jsoneditor) clamp(w, h int) {
 	}
 	e.row = clampint(e.row, 0, len(e.lines)-1)
 	e.col = clampint(e.col, 0, len(e.line()))
+	if e.selrow >= len(e.lines) {
+		e.selrow = -1
+	}
 	if e.row < e.scroll {
 		e.scroll = e.row
 	}
@@ -219,6 +335,7 @@ var (
 	jsonnumber = lipgloss.Color("#D19A66")
 	jsonbool   = lipgloss.Color("#C678DD")
 	jsonpunct  = lipgloss.Color("#7E868D")
+	selstyle   = lipgloss.NewStyle().Background(lipgloss.Color("#6B7286"))
 )
 
 func highlightjson(r []rune) []lipgloss.Color {
@@ -293,6 +410,12 @@ func (e jsoneditor) view(w, h int, focused bool) string {
 	}
 	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 
+	selon := focused && e.hassel()
+	var ar, ac, br, bc int
+	if selon {
+		ar, ac, br, bc = e.selrange()
+	}
+
 	var out []string
 	for vr := 0; vr < h; vr++ {
 		lr := e.scroll + vr
@@ -304,6 +427,7 @@ func (e jsoneditor) view(w, h int, focused bool) string {
 		cols := highlightjson(r)
 		var b strings.Builder
 		for c := e.hoff; c < e.hoff+w; c++ {
+			sel := selon && (lr > ar || (lr == ar && c >= ac)) && (lr < br || (lr == br && c < bc))
 			switch {
 			case e.hoff > 0 && c == e.hoff && c < len(r):
 				b.WriteString(dim.Render("…"))
@@ -313,6 +437,12 @@ func (e jsoneditor) view(w, h int, focused bool) string {
 					cell = string(r[c])
 				}
 				b.WriteString(lipgloss.NewStyle().Reverse(true).Render(cell))
+			case sel:
+				if c < len(r) {
+					b.WriteString(selstyle.Foreground(cols[c]).Render(string(r[c])))
+				} else {
+					b.WriteString(selstyle.Render(" "))
+				}
 			case c < len(r):
 				b.WriteString(lipgloss.NewStyle().Foreground(cols[c]).Render(string(r[c])))
 			default:

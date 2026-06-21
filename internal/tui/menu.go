@@ -1,9 +1,11 @@
 package tui
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"math"
+	"os"
 	"strings"
 	"time"
 
@@ -158,6 +160,9 @@ type Menu struct {
 	editerr    string
 	editname   string
 	editproto  string
+
+	editordrag    bool
+	editordragdir int
 }
 
 func NewMenu(lang, mono, color string) Menu {
@@ -179,7 +184,8 @@ func (m Menu) tick() tea.Cmd {
 
 func (m Menu) animating() bool {
 	return m.revealing || m.retracting || m.connected ||
-		m.focus == focussearch || m.mode == modeadd
+		m.focus == focussearch || m.mode == modeadd ||
+		(m.editordrag && m.editordragdir != 0)
 }
 
 func (m Menu) withtick(cmd tea.Cmd) (tea.Model, tea.Cmd) {
@@ -212,6 +218,10 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.retracting && time.Since(m.retractat).Seconds() >= ringretractdur {
 			m.retracting = false
 		}
+		if m.mode == modeedit && m.editordrag && m.editordragdir != 0 {
+			ew, eh := m.editordims()
+			m.editor.dragextend(m.editordragdir, ew, eh)
+		}
 		if !m.animating() {
 			m.ticking = false
 			return m, nil
@@ -241,37 +251,18 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		return m, tea.HideCursor
+	case tea.MouseMsg:
+		if m.mode == modeedit {
+			m.editmouse(msg)
+			return m.withtick(nil)
+		}
+		return m, nil
 	case tea.KeyMsg:
+		if m.mode == modeedit {
+			return m.updateeditor(msg)
+		}
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
-		}
-		if m.mode == modeedit {
-			switch msg.String() {
-			case "esc":
-				m.mode = modelist
-				m.editerr = ""
-				return m.withtick(nil)
-			case "ctrl+s":
-				m.editerr = ""
-				return m.withtick(saveservercmd(m.editsuburl, m.editsrvidx, m.editor.value()))
-			case "tab", "shift+tab":
-				m.editfocus = (m.editfocus + 1) % 2
-				return m.withtick(nil)
-			}
-			if m.editfocus == editsave {
-				switch msg.String() {
-				case "enter", " ":
-					m.editerr = ""
-					return m.withtick(saveservercmd(m.editsuburl, m.editsrvidx, m.editor.value()))
-				case "left", "up":
-					m.editfocus = editbody
-					return m.withtick(nil)
-				}
-				return m.withtick(nil)
-			}
-			ew, eh := m.editordims()
-			m.editor.handlekey(msg, ew, eh)
-			return m.withtick(nil)
 		}
 		if m.mode == modeadd {
 			f, res := m.form.update(msg, m.searchwidth())
@@ -366,21 +357,24 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				items := m.panel.items()
 				if m.panel.cursor >= 0 && m.panel.cursor < len(items) {
 					it := items[m.panel.cursor]
-					if it.srvidx >= 0 {
-						srv := m.panel.subs[it.subidx].Servers[it.srvidx]
-						m.editor = newjsoneditor(prettyjson(srv.Raw))
-						m.editsuburl = m.panel.subs[it.subidx].URL
-						m.editsrvidx = it.srvidx
-						m.editfocus = editbody
-						m.editerr = ""
-						m.editname = srv.Name
-						m.editproto = strings.ToLower(srv.Protocol)
-						if isjsonconfig(srv.Raw) {
-							m.editproto += " / json"
-						}
-						m.mode = modeedit
-						return m.withtick(nil)
+					if it.srvidx < 0 {
+						url := m.panel.subs[it.subidx].URL
+						m.panel.collapsed[url] = !m.panel.collapsed[url]
+						return m, nil
 					}
+					srv := m.panel.subs[it.subidx].Servers[it.srvidx]
+					m.editor = newjsoneditor(prettyjson(srv.Raw))
+					m.editsuburl = m.panel.subs[it.subidx].URL
+					m.editsrvidx = it.srvidx
+					m.editfocus = editbody
+					m.editerr = ""
+					m.editname = srv.Name
+					m.editproto = strings.ToLower(srv.Protocol)
+					if isjsonconfig(srv.Raw) {
+						m.editproto += " / json"
+					}
+					m.mode = modeedit
+					return m.withtick(nil)
 				}
 				return m, nil
 			}
@@ -505,6 +499,110 @@ func (m Menu) editordims() (int, int) {
 		h = 1
 	}
 	return w, h
+}
+
+func (m Menu) updateeditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.mode = modelist
+		m.editerr = ""
+		m.editordrag = false
+		m.editordragdir = 0
+		return m.withtick(nil)
+	case "ctrl+s":
+		m.editerr = ""
+		return m.withtick(saveservercmd(m.editsuburl, m.editsrvidx, m.editor.value()))
+	case "ctrl+c", "ctrl+shift+c":
+		return m, osc52copy(m.editor.copytext())
+	case "tab", "shift+tab":
+		m.editfocus = (m.editfocus + 1) % 2
+		return m.withtick(nil)
+	}
+	if m.editfocus == editsave {
+		switch msg.String() {
+		case "enter", " ":
+			m.editerr = ""
+			return m.withtick(saveservercmd(m.editsuburl, m.editsrvidx, m.editor.value()))
+		case "left", "up":
+			m.editfocus = editbody
+			return m.withtick(nil)
+		}
+		return m.withtick(nil)
+	}
+	ew, eh := m.editordims()
+	m.editor.handlekey(msg, ew, eh)
+	return m.withtick(nil)
+}
+
+func (m *Menu) editmouse(msg tea.MouseMsg) {
+	m.editfocus = editbody
+	ew, eh := m.editordims()
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		m.editor.scrollby(-3, eh)
+		return
+	case tea.MouseButtonWheelDown:
+		m.editor.scrollby(3, eh)
+		return
+	}
+
+	innerw := ew + 2
+	cw := innerw
+	if w := 1 + lipgloss.Width(m.editname); w > cw {
+		cw = w
+	}
+	hinttext, hintst := m.tr.EditHint, panelfaint
+	if m.editerr != "" {
+		hinttext, hintst = m.editerr, errstyle
+	}
+	hinth := lipgloss.Height(hintst.Width(innerw).Render(hinttext))
+	modalw := cw + 4
+	modalh := 3 + (eh + 2) + hinth + 1 + 2
+	textx0 := (m.width-modalw)/2 + 3
+	texty0 := (m.height-modalh)/2 + 5
+	vr := msg.Y - texty0
+	vc := msg.X - textx0
+
+	switch msg.Action {
+	case tea.MouseActionPress:
+		if msg.Button != tea.MouseButtonLeft {
+			return
+		}
+		m.editmoveto(vr, vc, ew, eh)
+		m.editor.selrow, m.editor.selcol = m.editor.row, m.editor.col
+		m.editordrag = true
+		m.editordragdir = 0
+	case tea.MouseActionMotion:
+		if !m.editordrag {
+			return
+		}
+		switch {
+		case vr < 0:
+			m.editordragdir = -1
+		case vr >= eh:
+			m.editordragdir = 1
+		default:
+			m.editordragdir = 0
+		}
+		m.editmoveto(vr, vc, ew, eh)
+	case tea.MouseActionRelease:
+		m.editordrag = false
+		m.editordragdir = 0
+	}
+}
+
+func (m *Menu) editmoveto(vr, vc, w, h int) {
+	e := &m.editor
+	e.row = clampint(e.scroll+clampint(vr, 0, max0(h-1)), 0, len(e.lines)-1)
+	e.col = clampint(e.hoff+clampint(vc, 0, max0(w-1)), 0, len(e.line()))
+	e.clamp(w, h)
+}
+
+func osc52copy(s string) tea.Cmd {
+	return func() tea.Msg {
+		os.Stdout.WriteString("\x1b]52;c;" + base64.StdEncoding.EncodeToString([]byte(s)) + "\x07")
+		return nil
+	}
 }
 
 func (m Menu) rendereditmodal() string {
