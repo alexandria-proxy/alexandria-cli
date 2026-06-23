@@ -10,6 +10,8 @@ type Strings struct {
 	SearchHint   string
 	Autoupdate   string
 	Expires      string
+	Used         string
+	Of           string
 	NoSubs       string
 	AddSubHint   string
 
@@ -38,7 +40,9 @@ var table = map[string]Strings{
 		ServersTitle:   "Servers",
 		SearchHint:     "Type here to search",
 		Autoupdate:     "autoupdate",
-		Expires:        "Expires",
+		Expires:        "expires",
+		Used:           "used",
+		Of:             "of",
 		NoSubs:         "No subscriptions found",
 		AddSubHint:     "Press «ctrl + a» to add",
 
@@ -66,7 +70,9 @@ var table = map[string]Strings{
 		ServersTitle: "Серверы",
 		SearchHint:   "Введите для поиска",
 		Autoupdate:   "автообновление",
-		Expires:      "Истекает",
+		Expires:      "истекает",
+		Used:         "использовано",
+		Of:           "из",
 		NoSubs:       "Подписки не найдены",
 		AddSubHint:   "Нажмите «ctrl + a» чтобы добавить",
 
@@ -95,6 +101,8 @@ var table = map[string]Strings{
 		SearchHint:   "برای جستجو تایپ کنید",
 		Autoupdate:   "بروزرسانی خودکار",
 		Expires:      "انقضا",
+		Used:         "استفاده شده",
+		Of:           "از",
 		NoSubs:       "اشتراکی یافت نشد",
 		AddSubHint:   "«ctrl + a» را برای افزودن بزنید",
 

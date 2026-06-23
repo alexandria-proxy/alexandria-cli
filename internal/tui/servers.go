@@ -153,16 +153,22 @@ func (p serverspanel) subcard(s subscription.Subscription, usable int, selected,
 	}
 	name := spread(arrow+lipgloss.NewStyle().Bold(true).Render(s.Name), "", bodyw)
 	meta := panelfaint.Render(spread(
-		s.UpdatedAt.Format("02.01.2006 15:04")+"  ·  "+p.tr.Autoupdate+" "+fmtdur(s.AutoUpdate),
+		"  "+s.UpdatedAt.Format("02.01.2006 15:04")+" · "+p.tr.Autoupdate+" "+fmtdur(s.AutoUpdate),
 		"", bodyw))
-	usage := spread(
-		usagebar(s.UsedBytes, s.TotalBytes)+"  "+humanbytes(s.UsedBytes)+" / "+totallabel(s.TotalBytes),
+
+	var left string
+	if s.TotalBytes > 0 {
+		left = usagebar(s.UsedBytes, s.TotalBytes) + "  " + panelfaint.Render(humanbytes(s.UsedBytes)+" / "+totallabel(s.TotalBytes))
+	} else {
+		left = panelfaint.Render(p.tr.Used + " " + humanbytes(s.UsedBytes) + " (" + p.tr.Of + " ∞)")
+	}
+	usage := spread("  "+left,
 		panelfaint.Render(p.tr.Expires+" "+s.Expires.Format("02.01.2006")),
 		bodyw)
 
 	lines := []string{name, meta, usage}
 	if s.Note != "" {
-		lines = append(lines, panelfaint.Italic(true).Render(spread(s.Note, "", bodyw)))
+		lines = append(lines, panelfaint.Italic(true).Width(bodyw).Align(lipgloss.Center).Render(s.Note))
 	}
 	return cardbox(lines, border, usable)
 }
@@ -303,13 +309,13 @@ func fmtdur(d time.Duration) string {
 func humanbytes(n int64) string {
 	switch {
 	case n >= 1<<40:
-		return fmt.Sprintf("%.1f TB", float64(n)/(1<<40))
+		return fmt.Sprintf("%.1ftb", float64(n)/(1<<40))
 	case n >= 1<<30:
-		return fmt.Sprintf("%d GB", n/(1<<30))
+		return fmt.Sprintf("%dgb", n/(1<<30))
 	case n >= 1<<20:
-		return fmt.Sprintf("%d MB", n/(1<<20))
+		return fmt.Sprintf("%dmb", n/(1<<20))
 	default:
-		return fmt.Sprintf("%d KB", n/(1<<10))
+		return fmt.Sprintf("%dkb", n/(1<<10))
 	}
 }
 
