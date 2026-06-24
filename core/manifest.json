@@ -1,29 +1,29 @@
 {
-  "version": "26.6.1",
+  "version": "26.6.22",
   "assets": {
     "linux-amd64": {
       "file": "Xray-linux-64.zip",
-      "sha256": "136e822e99e616692550723e8b607cd8858c62a390aea5704938bc27930904ba"
+      "sha256": "562bdeb85fb65ac114193fc21826030ef21cb3c83d1bcd64078ee4e0d4e78ef3"
     },
     "linux-arm64": {
       "file": "Xray-linux-arm64-v8a.zip",
-      "sha256": "5c0f397b2605a853e5b308ae6485ad2ec395ca11ed7ae0fd023c480c7fdb279d"
+      "sha256": "257bffc9d66f5823fcc67ebc114e487ac53a3554d38cf40eaf7be265c9d8a23c"
     },
     "darwin-amd64": {
       "file": "Xray-macos-64.zip",
-      "sha256": "2636b49efed01ed4fae07d3988241819d89d880c46a353f6526a2e5195c14d06"
+      "sha256": "dff448e06f72d94a126aaa7d32b19d75476e1392f7255f8856b2be9fb9e31630"
     },
     "darwin-arm64": {
       "file": "Xray-macos-arm64-v8a.zip",
-      "sha256": "b0c13d8215eea03929c773056dce21e903fe6e7543348f46bb42184190fb5e50"
+      "sha256": "426e2e832b55aa2c58988c31287d0a341360708959ec73698cc0212d1c0b9517"
     },
     "windows-amd64": {
       "file": "Xray-windows-64.zip",
-      "sha256": "0a1ee8c8a45e11e865c725db195429c79b52ee960407065089c5be586f343248"
+      "sha256": "da8629b945a70dd7e967ecc007d08154705c011568885935a7a0ac9688107488"
     },
     "windows-arm64": {
       "file": "Xray-windows-arm64-v8a.zip",
-      "sha256": "b990d739e635c0c3f6fe0ac6d33ebae16d27576816c0bd469706af4f0f5a58b2"
+      "sha256": "49a51cd57b747dab3cbd26ba997ac882a5ba51825eae173379e73f1bd00af33a"
     }
   }
 }
