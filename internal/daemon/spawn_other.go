@@ -2,8 +2,15 @@
 
 package daemon
 
-import "syscall"
+import (
+	"os"
+	"syscall"
+)
 
 func detachattr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{}
+}
+
+func terminate(p *os.Process) error {
+	return p.Kill()
 }

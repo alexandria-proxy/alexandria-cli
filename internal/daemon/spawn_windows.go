@@ -2,7 +2,10 @@
 
 package daemon
 
-import "syscall"
+import (
+	"os"
+	"syscall"
+)
 
 const (
 	detachedprocess       = 0x00000008
@@ -15,4 +18,8 @@ func detachattr() *syscall.SysProcAttr {
 		CreationFlags: detachedprocess | createnewprocessgroup | createnowindow,
 		HideWindow:    true,
 	}
+}
+
+func terminate(p *os.Process) error {
+	return p.Kill()
 }

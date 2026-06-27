@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -40,18 +42,48 @@ func Run() error {
 	}
 	defer ln.Close()
 
+	pid := pidpath()
+	_ = os.WriteFile(pid, []byte(strconv.Itoa(os.Getpid())), 0600)
+
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
 
+	_ = os.Remove(pid)
 	_ = os.Remove(path)
 	return nil
+}
+
+func pidpath() string {
+	if p, err := ipc.SocketPath(); err == nil {
+		return filepath.Join(filepath.Dir(p), "control.pid")
+	}
+	return ""
+}
+
+func stopdaemon() {
+	if data, err := os.ReadFile(pidpath()); err == nil {
+		if n, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil && n > 0 {
+			if p, err := os.FindProcess(n); err == nil {
+				_ = terminate(p)
+			}
+		}
+	}
+	for i := 0; i < 40; i++ {
+		if !ipc.DaemonUp() {
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if p, err := ipc.SocketPath(); err == nil {
+		_ = os.Remove(p)
+	}
 }
 
 func (s *state) handle(req ipc.Request) ipc.Response {
 	switch req.Cmd {
 	case "ping":
-		return ipc.Response{OK: true}
+		return ipc.Response{OK: true, Version: ipc.ProtocolVersion}
 
 	case "list":
 		s.mu.Lock()
@@ -183,7 +215,10 @@ func (s *state) handle(req ipc.Request) ipc.Response {
 
 func Ensure() error {
 	if ipc.DaemonUp() {
-		return nil
+		if resp, err := ipc.Send(ipc.Request{Cmd: "ping"}); err == nil && resp.Version == ipc.ProtocolVersion {
+			return nil
+		}
+		stopdaemon()
 	}
 	exe, err := os.Executable()
 	if err != nil {
