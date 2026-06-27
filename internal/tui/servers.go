@@ -105,7 +105,10 @@ func (p serverspanel) hittest(row, scroll int) (int, string, int) {
 	target := row - 4 + scroll
 	y := 0
 	idx := 0
-	for _, sub := range p.subs {
+	for si, sub := range p.subs {
+		if si > 0 {
+			y++
+		}
 		h := p.subcardheight(sub)
 		if target < y+h {
 			return idx, "header", target - y
@@ -121,14 +124,16 @@ func (p serverspanel) hittest(row, scroll int) (int, string, int) {
 				idx++
 			}
 		}
-		y++
 	}
 	return -1, "", 0
 }
 
 func (p serverspanel) listrow(url string) (int, bool) {
 	y := 0
-	for _, sub := range p.subs {
+	for si, sub := range p.subs {
+		if si > 0 {
+			y++
+		}
 		if sub.URL == url {
 			return y, true
 		}
@@ -136,7 +141,6 @@ func (p serverspanel) listrow(url string) (int, bool) {
 		if !p.collapsed[sub.URL] {
 			y += 3 * len(sub.Servers)
 		}
-		y++
 	}
 	return 0, false
 }
@@ -144,7 +148,10 @@ func (p serverspanel) listrow(url string) (int, bool) {
 func (p serverspanel) itemspan(idx int) (int, int) {
 	y := 0
 	i := 0
-	for _, sub := range p.subs {
+	for si, sub := range p.subs {
+		if si > 0 {
+			y++
+		}
 		h := p.subcardheight(sub)
 		if i == idx {
 			return y, h
@@ -160,19 +167,20 @@ func (p serverspanel) itemspan(idx int) (int, int) {
 				i++
 			}
 		}
-		y++
 	}
 	return 0, 0
 }
 
 func (p serverspanel) listheight() int {
 	y := 0
-	for _, sub := range p.subs {
+	for si, sub := range p.subs {
+		if si > 0 {
+			y++
+		}
 		y += p.subcardheight(sub)
 		if !p.collapsed[sub.URL] {
 			y += 3 * len(sub.Servers)
 		}
-		y++
 	}
 	return y
 }
@@ -286,6 +294,9 @@ func (p serverspanel) render(width, height int, busyurl string, busybtn int, dro
 
 	var blocks []string
 	for si, sub := range p.subs {
+		if si > 0 {
+			blocks = append(blocks, "")
+		}
 		headsel := p.serversfocused && sel.subidx == si && sel.srvidx == -1
 		collapsed := p.collapsed[sub.URL]
 		bb := -1
@@ -306,7 +317,6 @@ func (p serverspanel) render(width, height int, busyurl string, busybtn int, dro
 				blocks = append(blocks, lipgloss.NewStyle().PaddingLeft(1).Render(block))
 			}
 		}
-		blocks = append(blocks, "")
 	}
 
 	listlines := strings.Split(lipgloss.JoinVertical(lipgloss.Left, blocks...), "\n")
@@ -420,7 +430,7 @@ func (p serverspanel) subcard(s subscription.Subscription, usable int, selected,
 	lines := []string{name, meta, usage}
 	italics := []bool{false, false, false}
 	if s.Note != "" {
-		lines = append(lines, panelfaint.Italic(true).Width(bodyw).Align(lipgloss.Center).Render(s.Note))
+		lines = append(lines, panelfaint.Italic(true).Width(bodyw).Align(lipgloss.Center).Render(cliprunes(s.Note, bodyw)))
 		italics = append(italics, true)
 	}
 	if busy {
@@ -478,7 +488,7 @@ func (p serverspanel) servercard(s subscription.Server, w int, selected, chosen 
 
 	lines := strings.Split(content, "\n")
 	for i, ln := range lines {
-		lines[i] = " " + padline(ln, bodyw) + " "
+		lines[i] = " " + padline(ansi.Truncate(ln, bodyw, ""), bodyw) + " "
 	}
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder(), false, true, true, true).
@@ -535,7 +545,7 @@ func cardbox(lines []string, border lipgloss.Color, usable int) string {
 	}
 	out := make([]string, len(lines))
 	for i, ln := range lines {
-		out[i] = " " + padline(ln, bodyw) + " "
+		out[i] = " " + padline(ansi.Truncate(ln, bodyw, ""), bodyw) + " "
 	}
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -605,7 +615,7 @@ func busycard(lines []string, italics []bool, usable int, phase float64) string 
 	for i, ln := range lines {
 		b.WriteString("\x1b[0m\n")
 		paint("│", 0, false)
-		paint(" "+padline(ansi.Strip(ln), bodyw)+" ", 1, i < len(italics) && italics[i])
+		paint(" "+padline(cliprunes(ansi.Strip(ln), bodyw), bodyw)+" ", 1, i < len(italics) && italics[i])
 		paint("│", width-1, false)
 	}
 	b.WriteString("\x1b[0m\n")

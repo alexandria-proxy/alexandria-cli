@@ -951,10 +951,11 @@ func (m Menu) clickpanel(row, cx int) (tea.Model, tea.Cmd) {
 		m.panel.serversfocused = true
 		m.panel.cursor = idx
 		m.panel.btnidx = -1
+		px, _, pw := m.panelgeom()
+		usable := panelusable(pw)
 		if kind == "header" {
-			px, _, pw := m.panelgeom()
 			if local == 1 {
-				if b := headerbtnat(cx, px+2, panelusable(pw)); b >= 0 {
+				if b := headerbtnat(cx, px+2, usable); b >= 0 {
 					m.panel.btnidx = b
 					return m.runheaderbtn(items[idx])
 				}
@@ -963,6 +964,9 @@ func (m Menu) clickpanel(row, cx int) (tea.Model, tea.Cmd) {
 			m.panel.collapsed[url] = !m.panel.collapsed[url]
 			m.panel.clampscroll(m.listviewH())
 			return m.withtick(nil)
+		}
+		if local == 0 && cx >= px+usable-3 {
+			return m.openeditor(items[idx])
 		}
 		return m.selectserver(items[idx])
 	}
