@@ -38,6 +38,7 @@ type addform struct {
 	name      textinput
 	url       textinput
 	loading   bool
+	editing   bool
 	err       string
 }
 
@@ -111,8 +112,12 @@ func (f addform) render(width int) string {
 		usable = width
 	}
 
+	title := f.tr.AddSubTitle
+	if f.editing {
+		title = f.tr.EditSubTitle
+	}
 	parts := []string{
-		paneltitlest.Render(f.tr.AddSubTitle), "",
+		paneltitlest.Render(title), "",
 		f.typefield(usable), "",
 		labeledinput(f.tr.FieldName, f.name, f.focus == fieldname, usable), "",
 		labeledinput(f.tr.FieldURL, f.url, f.focus == fieldurl, usable), "",
@@ -182,7 +187,11 @@ func (f addform) submitbutton() string {
 	if f.focus != fieldsubmit {
 		st = connectbtnblur
 	}
-	return st.Render(f.tr.AddBtn)
+	label := f.tr.AddBtn
+	if f.editing {
+		label = f.tr.SaveBtn
+	}
+	return st.Render(label)
 }
 
 func labeledinput(label string, ti textinput, focused bool, usable int) string {

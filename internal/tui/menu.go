@@ -25,6 +25,7 @@ const (
 	revealpeak       = 0.85
 
 	idletick       = 80 * time.Millisecond
+	busymin        = time.Second
 	ringcycle      = 5.0
 	ringsweep      = 1.5
 	ringmax        = 0.85
@@ -42,6 +43,10 @@ var (
 	disconnectbtn     = lipgloss.NewStyle().Bold(true).Padding(0, 1).Background(lipgloss.Color("#E0A6AC")).Foreground(lipgloss.Color("16"))
 	disconnectbtnblur = lipgloss.NewStyle().Bold(true).Padding(0, 1).Background(lipgloss.Color("#9C7A7E")).Foreground(lipgloss.Color("237"))
 	timerstyle        = lipgloss.NewStyle().Bold(true).PaddingLeft(2).Foreground(btngray)
+
+	actionrow    = lipgloss.NewStyle().Padding(0, 1).Foreground(lipgloss.Color("250"))
+	actionrowsel = lipgloss.NewStyle().Bold(true).Padding(0, 1).Background(btngray).Foreground(lipgloss.Color("16"))
+	actiondanger = lipgloss.NewStyle().Bold(true).Padding(0, 1).Background(lipgloss.Color("#E0A6AC")).Foreground(lipgloss.Color("16"))
 )
 
 type focuszone int
@@ -58,6 +63,18 @@ const (
 	modelist panelmode = iota
 	modeadd
 	modeedit
+	modeactions
+)
+
+type actionid int
+
+const (
+	actupdate actionid = iota
+	actping
+	actpin
+	actcopy
+	actedit
+	actremove
 )
 
 type editzone int
@@ -79,6 +96,40 @@ type addresultmsg struct {
 type editsavedmsg struct {
 	subs []subscription.Subscription
 	err  string
+}
+
+type subsresultmsg struct {
+	subs []subscription.Subscription
+	err  string
+}
+
+func subscmd(req ipc.Request) tea.Cmd {
+	return func() tea.Msg {
+		resp, err := ipc.Send(req)
+		if err != nil {
+			return subsresultmsg{err: err.Error()}
+		}
+		if !resp.OK {
+			return subsresultmsg{err: resp.Error}
+		}
+		return subsresultmsg{subs: resp.Subscriptions}
+	}
+}
+
+func updatesubcmd(url string) tea.Cmd {
+	return subscmd(ipc.Request{Cmd: "add_subscription", URL: url})
+}
+
+func pingsubcmd(url string) tea.Cmd {
+	return subscmd(ipc.Request{Cmd: "ping_subscription", URL: url})
+}
+
+func togglepincmd(url string) tea.Cmd {
+	return subscmd(ipc.Request{Cmd: "toggle_pin", URL: url})
+}
+
+func removesubcmd(url string) tea.Cmd {
+	return subscmd(ipc.Request{Cmd: "remove_subscription", URL: url})
 }
 
 func saveservercmd(url string, srvidx int, raw string) tea.Cmd {
@@ -163,6 +214,15 @@ type Menu struct {
 
 	editordrag    bool
 	editordragdir int
+
+	actionsuburl  string
+	actionidx     int
+	actionbusy    actionid
+	actionrunning bool
+	actiondone    bool
+	actionconfirm bool
+	actionstart   time.Time
+	actionmsg     string
 }
 
 func NewMenu(lang, mono, color string) Menu {
@@ -176,7 +236,7 @@ func (m Menu) Init() tea.Cmd { return tea.Batch(tea.HideCursor, m.tick(), loadsu
 
 func (m Menu) tick() tea.Cmd {
 	d := idletick
-	if m.revealing {
+	if m.revealing || m.actionrunning {
 		d = revealtick
 	}
 	return tea.Tick(d, func(time.Time) tea.Msg { return menutickmsg{} })
@@ -185,7 +245,8 @@ func (m Menu) tick() tea.Cmd {
 func (m Menu) animating() bool {
 	return m.revealing || m.retracting || m.connected ||
 		m.focus == focussearch || m.mode == modeadd ||
-		(m.editordrag && m.editordragdir != 0)
+		(m.editordrag && m.editordragdir != 0) ||
+		m.actionrunning
 }
 
 func (m Menu) withtick(cmd tea.Cmd) (tea.Model, tea.Cmd) {
@@ -222,6 +283,9 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			ew, eh := m.editordims()
 			m.editor.dragextend(m.editordragdir, ew, eh)
 		}
+		if m.actionrunning && m.actiondone && time.Since(m.actionstart) >= busymin {
+			m.finishaction()
+		}
 		if !m.animating() {
 			m.ticking = false
 			return m, nil
@@ -248,6 +312,19 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.editerr = ""
 		m.mode = modelist
 		return m, nil
+	case subsresultmsg:
+		if msg.err == "" {
+			m.panel.subs = msg.subs
+			if n := m.panel.itemcount(); m.panel.cursor >= n {
+				m.panel.cursor = max0(n - 1)
+			}
+		}
+		m.actiondone = true
+		faked := m.actionbusy == actupdate || m.actionbusy == actping
+		if !faked || time.Since(m.actionstart) >= busymin {
+			m.finishaction()
+		}
+		return m.withtick(nil)
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		return m, tea.HideCursor
@@ -264,6 +341,9 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
+		if m.mode == modeactions {
+			return m.updateactions(msg)
+		}
 		if m.mode == modeadd {
 			f, res := m.form.update(msg, m.searchwidth())
 			m.form = f
@@ -277,7 +357,7 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m.withtick(nil)
 		}
-		if msg.String() == "ctrl+a" && m.focus != focussearch && m.width >= twocolmin {
+		if msg.String() == "ctrl+a" && m.focus != focussearch {
 			m.mode = modeadd
 			m.form = newaddform(m.tr)
 			m.focus = focusconnect
@@ -333,67 +413,103 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.focus == focusservers {
+			items := m.panel.items()
+			hasit := m.panel.cursor >= 0 && m.panel.cursor < len(items)
+			var it selitem
+			if hasit {
+				it = items[m.panel.cursor]
+			}
+			header := hasit && it.srvidx < 0
+
 			switch msg.String() {
-			case "esc", "left":
+			case "esc":
 				m.focus = focusconnect
 				m.panel.serversfocused = false
+				m.panel.btnidx = -1
 				return m.withtick(nil)
 			case "up", "k", "ctrl+up":
 				if m.panel.cursor == 0 {
 					m.focus = focussearch
 					m.panel.serversfocused = false
 					m.panel.focused = true
+					m.panel.btnidx = -1
 					m.panel.search.focusend()
 					return m.withtick(nil)
 				}
 				m.panel.cursor--
+				m.panel.btnidx = -1
 				return m, nil
 			case "down", "j", "ctrl+down":
 				if n := m.panel.itemcount(); m.panel.cursor < n-1 {
 					m.panel.cursor++
+					m.panel.btnidx = -1
 				}
 				return m, nil
-			case "enter", "right", "l":
-				items := m.panel.items()
-				if m.panel.cursor >= 0 && m.panel.cursor < len(items) {
-					it := items[m.panel.cursor]
-					if it.srvidx < 0 {
+			case "left", "h":
+				if header && m.panel.btnidx > 0 {
+					m.panel.btnidx--
+					return m, nil
+				}
+				if header && m.panel.btnidx == 0 {
+					m.panel.btnidx = -1
+					return m, nil
+				}
+				m.focus = focusconnect
+				m.panel.serversfocused = false
+				m.panel.btnidx = -1
+				return m.withtick(nil)
+			case "right", "l":
+				if header {
+					if m.panel.btnidx < 0 {
+						m.panel.btnidx = 0
+					} else if m.panel.btnidx < headerbtns-1 {
+						m.panel.btnidx++
+					}
+					return m, nil
+				}
+				if hasit {
+					return m.openeditor(it)
+				}
+				return m, nil
+			case " ":
+				if header {
+					url := m.panel.subs[it.subidx].URL
+					m.panel.collapsed[url] = !m.panel.collapsed[url]
+					return m, nil
+				}
+				if hasit {
+					return m.openeditor(it)
+				}
+				return m, nil
+			case "enter":
+				if !hasit {
+					return m, nil
+				}
+				if header {
+					if m.panel.btnidx < 0 {
 						url := m.panel.subs[it.subidx].URL
 						m.panel.collapsed[url] = !m.panel.collapsed[url]
 						return m, nil
 					}
-					srv := m.panel.subs[it.subidx].Servers[it.srvidx]
-					m.editor = newjsoneditor(prettyjson(srv.Raw))
-					m.editsuburl = m.panel.subs[it.subidx].URL
-					m.editsrvidx = it.srvidx
-					m.editfocus = editbody
-					m.editerr = ""
-					m.editname = srv.Name
-					m.editproto = strings.ToLower(srv.Protocol)
-					if isjsonconfig(srv.Raw) {
-						m.editproto += " / json"
-					}
-					m.mode = modeedit
-					return m.withtick(nil)
+					return m.runheaderbtn(it)
 				}
-				return m, nil
+				return m.openeditor(it)
 			}
 			return m, nil
 		}
 		switch msg.String() {
 		case "ctrl+c", "q", "esc":
 			return m, tea.Quit
-		case "right", "tab":
-			if m.width >= twocolmin {
-				if m.panel.itemcount() > 0 {
-					m.focus = focusservers
-					m.panel.serversfocused = true
-					m.panel.cursor = 0
-				} else {
-					m.focus = focussearch
-					m.panel.focused = true
-					m.panel.search.focusend()
-				}
+		case "right", "tab", "down":
+			if m.panel.itemcount() > 0 {
+				m.focus = focusservers
+				m.panel.serversfocused = true
+				m.panel.cursor = 0
+				m.panel.btnidx = -1
+			} else {
+				m.focus = focussearch
+				m.panel.focused = true
+				m.panel.search.focusend()
 			}
 			return m.withtick(nil)
 		case "enter", " ":
@@ -458,13 +574,35 @@ func (m Menu) View() string {
 	if m.width == 0 || m.height == 0 {
 		return unit
 	}
+
+	busyurl, busybtn := "", -1
+	if m.actionrunning {
+		busyurl = m.actionsuburl
+		switch m.actionbusy {
+		case actupdate:
+			busybtn = 0
+		case actping:
+			busybtn = 1
+		}
+	}
+	dropdown, anchorurl := "", ""
+	if m.mode == modeactions {
+		dropdown = m.renderactions()
+		anchorurl = m.actionsuburl
+	}
+
 	if m.width < twocolmin {
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, unit)
+		top := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, unit)
+		content := m.panel.render(m.width, m.height, busyurl, busybtn, dropdown, anchorurl)
+		if m.mode == modeadd {
+			content = m.form.render(m.width)
+		}
+		return lipgloss.JoinVertical(lipgloss.Left, top, content)
 	}
 
 	leftw := m.width / 2
 	rightw := m.width - leftw
-	rightcontent := m.panel.render(rightw, m.height)
+	rightcontent := m.panel.render(rightw, m.height, busyurl, busybtn, dropdown, anchorurl)
 	if m.mode == modeadd {
 		rightcontent = m.form.render(rightw)
 	}
@@ -532,6 +670,235 @@ func (m Menu) updateeditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	ew, eh := m.editordims()
 	m.editor.handlekey(msg, ew, eh)
 	return m.withtick(nil)
+}
+
+func (m Menu) openeditor(it selitem) (tea.Model, tea.Cmd) {
+	srv := m.panel.subs[it.subidx].Servers[it.srvidx]
+	m.editor = newjsoneditor(prettyjson(srv.Raw))
+	m.editsuburl = m.panel.subs[it.subidx].URL
+	m.editsrvidx = it.srvidx
+	m.editfocus = editbody
+	m.editerr = ""
+	m.editname = srv.Name
+	m.editproto = strings.ToLower(srv.Protocol)
+	if isjsonconfig(srv.Raw) {
+		m.editproto += " / json"
+	}
+	m.mode = modeedit
+	return m.withtick(nil)
+}
+
+func (m *Menu) startbusy(url string, a actionid) {
+	m.actionsuburl = url
+	m.actionbusy = a
+	m.actionrunning = true
+	m.actiondone = false
+	m.actionstart = time.Now()
+}
+
+func (m *Menu) finishaction() {
+	m.actionrunning = false
+	m.actiondone = false
+	m.actionconfirm = false
+	if m.mode == modeactions {
+		m.mode = modelist
+	}
+}
+
+func (m Menu) runheaderbtn(it selitem) (tea.Model, tea.Cmd) {
+	url := m.panel.subs[it.subidx].URL
+	switch m.panel.btnidx {
+	case 0:
+		m.startbusy(url, actupdate)
+		return m.withtick(updatesubcmd(url))
+	case 1:
+		m.startbusy(url, actping)
+		return m.withtick(pingsubcmd(url))
+	default:
+		m.actionsuburl = url
+		m.actionidx = 0
+		m.actionrunning = false
+		m.actionmsg = ""
+		m.actionconfirm = false
+		m.mode = modeactions
+		return m.withtick(nil)
+	}
+}
+
+func (m Menu) actionitems() []actionid {
+	return []actionid{actupdate, actping, actpin, actcopy, actedit, actremove}
+}
+
+func (m Menu) subbyurl(url string) (subscription.Subscription, bool) {
+	for _, s := range m.panel.subs {
+		if s.URL == url {
+			return s, true
+		}
+	}
+	return subscription.Subscription{}, false
+}
+
+func actionicon(a actionid) string {
+	switch a {
+	case actupdate:
+		return "↻"
+	case actping:
+		return "⏱"
+	case actpin:
+		return "🖈"
+	case actcopy:
+		return "⧉"
+	case actedit:
+		return "✎"
+	case actremove:
+		return "✕"
+	}
+	return " "
+}
+
+func (m Menu) actionlabel(a actionid, sub subscription.Subscription) string {
+	switch a {
+	case actupdate:
+		return m.tr.ActionUpdate
+	case actping:
+		return m.tr.ActionTestPing
+	case actpin:
+		if sub.Pinned {
+			return m.tr.ActionUnpin
+		}
+		return m.tr.ActionPin
+	case actcopy:
+		return m.tr.ActionCopyURL
+	case actedit:
+		return m.tr.ActionEdit
+	case actremove:
+		return m.tr.ActionRemove
+	}
+	return ""
+}
+
+func (m Menu) actionstatus(a actionid) string {
+	switch a {
+	case actupdate:
+		return m.tr.Updating
+	case actping:
+		return m.tr.Pinging
+	}
+	return ""
+}
+
+func (m Menu) updateactions(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.actionrunning {
+		return m.withtick(nil)
+	}
+	items := m.actionitems()
+	switch msg.String() {
+	case "esc", "left", "h", "a", "q":
+		m.mode = modelist
+		m.actionmsg = ""
+		m.actionconfirm = false
+		return m.withtick(nil)
+	case "up", "k", "ctrl+up":
+		m.actionidx = (m.actionidx - 1 + len(items)) % len(items)
+		m.actionmsg = ""
+		m.actionconfirm = false
+		return m, nil
+	case "down", "j", "ctrl+down":
+		m.actionidx = (m.actionidx + 1) % len(items)
+		m.actionmsg = ""
+		m.actionconfirm = false
+		return m, nil
+	case "enter", " ", "right", "l":
+		a := items[m.actionidx]
+		if a == actremove && !m.actionconfirm {
+			m.actionconfirm = true
+			return m.withtick(nil)
+		}
+		return m.runaction(a)
+	}
+	return m, nil
+}
+
+func (m Menu) runaction(a actionid) (tea.Model, tea.Cmd) {
+	sub, ok := m.subbyurl(m.actionsuburl)
+	if !ok {
+		m.mode = modelist
+		return m, nil
+	}
+	switch a {
+	case actupdate:
+		m.startbusy(sub.URL, actupdate)
+		return m.withtick(updatesubcmd(sub.URL))
+	case actping:
+		m.startbusy(sub.URL, actping)
+		return m.withtick(pingsubcmd(sub.URL))
+	case actpin:
+		m.actionbusy, m.actionrunning = actpin, true
+		return m.withtick(togglepincmd(sub.URL))
+	case actcopy:
+		m.actionmsg = m.tr.Copied
+		return m, osc52copy(sub.URL)
+	case actedit:
+		m.mode = modeadd
+		m.form = newaddform(m.tr)
+		m.form.editing = true
+		m.form.url.value = sub.URL
+		m.form.url.focusend()
+		m.form.focus = fieldurl
+		m.focus = focusconnect
+		m.panel.focused = false
+		m.panel.serversfocused = false
+		return m.withtick(nil)
+	case actremove:
+		m.actionbusy, m.actionrunning = actremove, true
+		return m.withtick(removesubcmd(sub.URL))
+	}
+	return m, nil
+}
+
+func (m Menu) renderactions() string {
+	sub, _ := m.subbyurl(m.actionsuburl)
+
+	items := m.actionitems()
+	menuw := 14
+	for _, a := range items {
+		if w := lipgloss.Width(actionicon(a)) + 2 + lipgloss.Width(m.actionlabel(a, sub)) + 3; w > menuw {
+			menuw = w
+		}
+	}
+
+	var rows []string
+	for i, a := range items {
+		busy := m.actionrunning && a == m.actionbusy
+		label := m.actionlabel(a, sub)
+		if a == actcopy && m.actionmsg != "" {
+			label = m.actionmsg
+		}
+		if a == actremove && m.actionconfirm {
+			label = m.actionlabel(actremove, sub) + "?"
+		}
+		text := actionicon(a) + "  " + label
+		st := actionrow
+		switch {
+		case busy:
+			status := m.actionstatus(a)
+			if status == "" {
+				status = m.actionlabel(a, sub)
+			}
+			text = actionicon(a) + "  " + shimmer(status)
+		case m.actionidx == i && a == actremove:
+			st = actiondanger
+		case m.actionidx == i:
+			st = actionrowsel
+		}
+		rows = append(rows, st.Width(menuw).Render(text))
+	}
+
+	body := lipgloss.JoinVertical(lipgloss.Left, rows...)
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(btngray).
+		Render(body)
 }
 
 func (m *Menu) editmouse(msg tea.MouseMsg) {

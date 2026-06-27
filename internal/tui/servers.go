@@ -8,22 +8,52 @@ import (
 	"github.com/alexandria-proxy/alexandria-cli/internal/i18n"
 	"github.com/alexandria-proxy/alexandria-cli/internal/subscription"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
+
+const headerbtns = 3
+
+var headerglyphs = [headerbtns]string{"↻", "⏱", "⋯"}
 
 var (
 	panelaccent  = lipgloss.Color("#6C7BFF")
 	paneldim     = lipgloss.Color("238")
 	paneltitlest = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("253"))
 	panelfaint   = lipgloss.NewStyle().Faint(true)
-	pingst       = lipgloss.NewStyle().Foreground(lipgloss.Color("150"))
 	barfullst    = lipgloss.NewStyle().Foreground(panelaccent)
 	baremptyst   = lipgloss.NewStyle().Foreground(lipgloss.Color("237"))
+
+	headerbtnst  = lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
+	headerbtnsel = lipgloss.NewStyle().Foreground(lipgloss.Color("16")).Background(btngray)
+
+	pinggood  = lipgloss.NewStyle().Foreground(lipgloss.Color("#A6E0AC"))
+	pingok    = lipgloss.NewStyle().Foreground(lipgloss.Color("#E0D6A6"))
+	pingbad   = lipgloss.NewStyle().Foreground(lipgloss.Color("#E0A6AC"))
+	pingworst = lipgloss.NewStyle().Foreground(lipgloss.Color("#C98A8F"))
+	pingdead  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#A86A70"))
 )
+
+func pingtext(ms int, tr i18n.Strings) string {
+	if ms < 0 {
+		return pingdead.Render(tr.Dead)
+	}
+	st := pingworst
+	switch {
+	case ms <= 100:
+		st = pinggood
+	case ms <= 200:
+		st = pingok
+	case ms <= 350:
+		st = pingbad
+	}
+	return st.Render(fmt.Sprintf("%dms", ms))
+}
 
 type serverspanel struct {
 	tr             i18n.Strings
 	subs           []subscription.Subscription
 	cursor         int
+	btnidx         int
 	search         textinput
 	focused        bool
 	serversfocused bool
@@ -87,7 +117,7 @@ func (p serverspanel) searchview(usable int) string {
 		Render(text)
 }
 
-func (p serverspanel) render(width, height int) string {
+func (p serverspanel) render(width, height int, busyurl string, busybtn int, dropdown, anchorurl string) string {
 	if width < 8 {
 		return ""
 	}
@@ -100,6 +130,7 @@ func (p serverspanel) render(width, height int) string {
 	search := p.searchview(usable)
 
 	blocks := []string{header, search}
+	anchoridx := -1
 
 	if len(p.subs) == 0 {
 		empty := lipgloss.NewStyle().
@@ -116,7 +147,14 @@ func (p serverspanel) render(width, height int) string {
 		for si, sub := range p.subs {
 			headsel := p.serversfocused && sel.subidx == si && sel.srvidx == -1
 			collapsed := p.collapsed[sub.URL]
-			blocks = append(blocks, p.subcard(sub, usable, headsel, collapsed))
+			bb := -1
+			if sub.URL == busyurl {
+				bb = busybtn
+			}
+			if dropdown != "" && sub.URL == anchorurl {
+				anchoridx = len(blocks)
+			}
+			blocks = append(blocks, p.subcard(sub, usable, headsel, collapsed, bb))
 
 			if !collapsed {
 				var rows []string
@@ -134,10 +172,35 @@ func (p serverspanel) render(width, height int) string {
 	}
 
 	body := lipgloss.JoinVertical(lipgloss.Left, blocks...)
-	return lipgloss.NewStyle().PaddingTop(1).PaddingLeft(2).Render(body)
+	panel := lipgloss.NewStyle().PaddingTop(1).PaddingLeft(2).Render(body)
+
+	if anchoridx >= 0 {
+		y := 1
+		for _, blk := range blocks[:anchoridx] {
+			y += lipgloss.Height(blk)
+		}
+		x := 2 + usable - lipgloss.Width(dropdown)
+		if x < 2 {
+			x = 2
+		}
+		panel = placeoverlay(x, y, dropdown, panel)
+	}
+	return panel
 }
 
-func (p serverspanel) subcard(s subscription.Subscription, usable int, selected, collapsed bool) string {
+func (p serverspanel) headerstrip(selected bool) string {
+	cells := make([]string, headerbtns)
+	for i, g := range headerglyphs {
+		if selected && p.btnidx == i {
+			cells[i] = headerbtnsel.Render(g)
+		} else {
+			cells[i] = headerbtnst.Render(g)
+		}
+	}
+	return strings.Join(cells, " ")
+}
+
+func (p serverspanel) subcard(s subscription.Subscription, usable int, selected, collapsed bool, busybtn int) string {
 	bodyw := usable - 4
 	if bodyw < 1 {
 		bodyw = 1
@@ -151,7 +214,13 @@ func (p serverspanel) subcard(s subscription.Subscription, usable int, selected,
 	if collapsed {
 		arrow = "› "
 	}
-	name := spread(arrow+lipgloss.NewStyle().Bold(true).Render(s.Name), "", bodyw)
+
+	busy := busybtn >= 0
+	title := lipgloss.NewStyle().Bold(true).Render(s.Name)
+	if s.Pinned {
+		title += panelfaint.Render(" 🖈")
+	}
+	name := spread(arrow+title, p.headerstrip(selected), bodyw)
 	meta := panelfaint.Render(spread(
 		"  "+s.UpdatedAt.Format("02.01.2006 15:04")+" · "+p.tr.Autoupdate+" "+fmtdur(s.AutoUpdate),
 		"", bodyw))
@@ -167,8 +236,13 @@ func (p serverspanel) subcard(s subscription.Subscription, usable int, selected,
 		bodyw)
 
 	lines := []string{name, meta, usage}
+	italics := []bool{false, false, false}
 	if s.Note != "" {
 		lines = append(lines, panelfaint.Italic(true).Width(bodyw).Align(lipgloss.Center).Render(s.Note))
+		italics = append(italics, true)
+	}
+	if busy {
+		return busycard(lines, italics, usable, busyphase())
 	}
 	return cardbox(lines, border, usable)
 }
@@ -189,8 +263,8 @@ func (p serverspanel) servercard(s subscription.Server, w int, selected bool) st
 	flag, name := splitflag(s.Name)
 
 	ping := arrowst.Render("›")
-	if s.PingMs > 0 {
-		ping = pingst.Render(fmt.Sprintf("%dms", s.PingMs)) + " " + arrowst.Render("›")
+	if s.PingMs != 0 {
+		ping = pingtext(s.PingMs, p.tr) + " " + arrowst.Render("›")
 	}
 
 	proto := strings.ToLower(s.Protocol)
@@ -281,6 +355,66 @@ func cardbox(lines []string, border lipgloss.Color, usable int) string {
 		BorderForeground(border).
 		Width(usable - 2).
 		Render(strings.Join(out, "\n"))
+}
+
+func busyphase() float64 {
+	const cyc = 600
+	return float64(time.Now().UnixMilli()%cyc) / cyc
+}
+
+func absf(x float64) float64 {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
+func shimmershade(t float64) lipgloss.Color {
+	if t < 0 {
+		t = 0
+	}
+	if t > 1 {
+		t = 1
+	}
+	v := 110 + int(t*145)
+	return lipgloss.Color(fmt.Sprintf("#%02x%02x%02x", v, v, v))
+}
+
+func busycard(lines []string, italics []bool, usable int, phase float64) string {
+	bodyw := usable - 4
+	if bodyw < 1 {
+		bodyw = 1
+	}
+	width := usable
+	pos := phase * float64(width)
+	colat := func(c int) lipgloss.Style {
+		d := absf(float64(c) - pos)
+		if half := float64(width) / 2; d > half {
+			d = float64(width) - d
+		}
+		return lipgloss.NewStyle().Foreground(shimmershade(1 - d/5.0))
+	}
+	paint := func(s string, start int, italic bool) string {
+		var b strings.Builder
+		c := start
+		for _, r := range s {
+			st := colat(c)
+			if italic {
+				st = st.Italic(true)
+			}
+			b.WriteString(st.Render(string(r)))
+			c += lipgloss.Width(string(r))
+		}
+		return b.String()
+	}
+
+	rows := []string{paint("╭"+strings.Repeat("─", width-2)+"╮", 0, false)}
+	for i, ln := range lines {
+		inner := " " + padline(ansi.Strip(ln), bodyw) + " "
+		rows = append(rows, paint("│", 0, false)+paint(inner, 1, italics[i])+paint("│", width-1, false))
+	}
+	rows = append(rows, paint("╰"+strings.Repeat("─", width-2)+"╯", 0, false))
+	return strings.Join(rows, "\n")
 }
 
 func spread(left, right string, w int) string {
