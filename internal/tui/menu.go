@@ -379,7 +379,7 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, timertick()
 	case subsloadedmsg:
 		m.panel.subs = msg.subs
-		m.panel.cursor = 0
+		m.panel.cursor, m.panel.scroll = 0, 0
 		if m.chosenurl == "" {
 			m.defaultchosen()
 		}
@@ -455,6 +455,12 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.editmouse(msg)
 			return m.withtick(nil)
 		}
+		if m.mode == modeactions {
+			return m.mouseactions(msg)
+		}
+		if m.mode == modelist {
+			return m.mouseupdate(msg)
+		}
 		return m, nil
 	case tea.KeyMsg:
 		if m.mode == modeedit {
@@ -500,7 +506,7 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.focus = focusservers
 					m.panel.focused = false
 					m.panel.serversfocused = true
-					m.panel.cursor = 0
+					m.panel.cursor, m.panel.scroll = 0, 0
 				} else {
 					m.focus = focusconnect
 					m.panel.focused = false
@@ -511,7 +517,7 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.focus = focusservers
 					m.panel.focused = false
 					m.panel.serversfocused = true
-					m.panel.cursor = 0
+					m.panel.cursor, m.panel.scroll = 0, 0
 				}
 				return m, nil
 			case "up":
@@ -529,7 +535,7 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.focus = focusservers
 					m.panel.focused = false
 					m.panel.serversfocused = true
-					m.panel.cursor = 0
+					m.panel.cursor, m.panel.scroll = 0, 0
 					m.panel.btnidx = -1
 				}
 				return m, nil
@@ -563,11 +569,13 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.panel.cursor--
 				m.panel.btnidx = -1
+				m.panel.ensurevisible(m.listviewH())
 				return m, nil
 			case "down", "j", "ctrl+down":
 				if n := m.panel.itemcount(); m.panel.cursor < n-1 {
 					m.panel.cursor++
 					m.panel.btnidx = -1
+					m.panel.ensurevisible(m.listviewH())
 				}
 				return m, nil
 			case "left", "h":
@@ -604,6 +612,7 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if m.panel.btnidx < 0 {
 						url := m.panel.subs[it.subidx].URL
 						m.panel.collapsed[url] = !m.panel.collapsed[url]
+						m.panel.clampscroll(m.listviewH())
 						return m, nil
 					}
 					return m.runheaderbtn(it)
@@ -641,7 +650,7 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.panel.itemcount() > 0 {
 					m.focus = focusservers
 					m.panel.serversfocused = true
-					m.panel.cursor = 0
+					m.panel.cursor, m.panel.scroll = 0, 0
 					m.panel.btnidx = -1
 				} else {
 					m.focus = focussearch
@@ -659,7 +668,7 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.panel.itemcount() > 0 {
 				m.focus = focusservers
 				m.panel.serversfocused = true
-				m.panel.cursor = 0
+				m.panel.cursor, m.panel.scroll = 0, 0
 				m.panel.btnidx = -1
 			} else {
 				m.focus = focussearch
@@ -750,28 +759,21 @@ func (m *Menu) animconnect(target bool) {
 	}
 }
 
-func (m Menu) View() string {
-	if m.mode == modeedit && m.width > 0 && m.height > 0 {
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.rendereditmodal())
-	}
-
-	logo := m.renderlogo()
-
+func (m Menu) viewbtn() string {
 	onconnect := m.focus == focusconnect && m.mode == modelist
-	var btn string
 	switch {
 	case m.connecting && !m.connected:
 		cb := connectbtn
 		if !onconnect {
 			cb = connectbtnblur
 		}
-		btn = cb.Render(m.tr.Connecting)
+		return cb.Render(m.tr.Connecting)
 	case m.connected:
 		db := disconnectbtn
 		if !onconnect {
 			db = disconnectbtnblur
 		}
-		btn = lipgloss.JoinHorizontal(
+		return lipgloss.JoinHorizontal(
 			lipgloss.Center,
 			db.Render(m.tr.Disconnect),
 			timerstyle.Render("⏱"+elapsed(time.Since(m.since))),
@@ -781,13 +783,207 @@ func (m Menu) View() string {
 		if !onconnect {
 			cb = connectbtnblur
 		}
-		btn = cb.Render(m.tr.Connect)
+		return cb.Render(m.tr.Connect)
 	}
+}
 
-	unit := lipgloss.JoinVertical(lipgloss.Center, logo, "", btn, "", m.rendermode())
+func (m Menu) viewunit() (unit, logo, btn, mode string) {
+	logo = m.renderlogo()
+	btn = m.viewbtn()
+	mode = m.rendermode()
+	unit = lipgloss.JoinVertical(lipgloss.Center, logo, "", btn, "", mode)
 	if m.connerr != "" {
 		unit = lipgloss.JoinVertical(lipgloss.Center, unit, "", errstyle.Render(m.connerr))
 	}
+	return unit, logo, btn, mode
+}
+
+func (m Menu) mouseupdate(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		return m.wheelmove(-1)
+	case tea.MouseButtonWheelDown:
+		return m.wheelmove(1)
+	}
+	if msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft {
+		return m, nil
+	}
+
+	unit, logo, btn, mode := m.viewunit()
+	unitw, unith := lipgloss.Width(unit), lipgloss.Height(unit)
+	logoh, btnh := lipgloss.Height(logo), lipgloss.Height(btn)
+
+	ux0, uy0, panelx, panely := 0, 0, 0, 0
+	if m.width < twocolmin {
+		ux0 = (m.width - unitw) / 2
+		panely = unith
+	} else {
+		leftw := m.width / 2
+		ux0 = (leftw - unitw) / 2
+		uy0 = (m.height - unith) / 2
+		panelx = leftw
+	}
+
+	btnrow := uy0 + logoh + 1
+	if msg.Y >= btnrow && msg.Y < btnrow+btnh {
+		bx0 := ux0 + (unitw-lipgloss.Width(btn))/2
+		if msg.X >= bx0 && msg.X < bx0+lipgloss.Width(btn) {
+			return m.clickconnect()
+		}
+	}
+
+	moderow := uy0 + logoh + 1 + btnh + 1
+	if msg.Y == moderow {
+		mw := lipgloss.Width(mode)
+		mx0 := ux0 + (unitw-mw)/2
+		if msg.X >= mx0 && msg.X < mx0+mw {
+			m.focus = focusmode
+			if msg.X < mx0+mw/2 {
+				m.connmode = "proxy"
+			} else {
+				m.connmode = "tun"
+			}
+			return m.withtick(nil)
+		}
+	}
+
+	if msg.X >= panelx {
+		return m.clickpanel(msg.Y-panely-1, msg.X)
+	}
+	return m, nil
+}
+
+func (m Menu) mouseactions(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft {
+		return m, nil
+	}
+	px, py, pw := m.panelgeom()
+	usable := panelusable(pw)
+	dropdown := m.renderactions()
+	ddw := lipgloss.Width(dropdown)
+	dropx := px + 2 + usable - ddw
+	if dropx < px+2 {
+		dropx = px + 2
+	}
+	lr, ok := m.panel.listrow(m.actionsuburl)
+	if ok {
+		top := py + 1 + 4 + (lr - m.panel.scroll)
+		items := m.actionitems()
+		for j := range items {
+			rowy := top + 1 + j
+			if msg.Y == rowy && msg.X >= dropx && msg.X < dropx+ddw {
+				m.actionidx = j
+				return m.runaction(items[j])
+			}
+		}
+	}
+	m.mode = modelist
+	m.actionmsg = ""
+	m.actionconfirm = false
+	return m.withtick(nil)
+}
+
+func (m Menu) clickconnect() (tea.Model, tea.Cmd) {
+	m.focus = focusconnect
+	m.panel.focused = false
+	m.panel.serversfocused = false
+	if m.connecting {
+		return m.withtick(nil)
+	}
+	if m.connected {
+		m.connecting = true
+		return m.withtick(disconnectcmd())
+	}
+	url, idx, ok := m.chosenserver()
+	if !ok {
+		m.flashat = time.Now()
+		return m.withtick(nil)
+	}
+	m.connecting = true
+	m.connerr = ""
+	m.pendurl, m.pendidx = url, idx
+	return m.withtick(connectcmd(url, idx, m.connmode))
+}
+
+func (m Menu) panelgeom() (px, py, pw int) {
+	if m.width < twocolmin {
+		unit, _, _, _ := m.viewunit()
+		return 0, lipgloss.Height(unit), m.width
+	}
+	leftw := m.width / 2
+	return leftw, 0, m.width - leftw
+}
+
+func panelusable(pw int) int {
+	u := pw - 4
+	if u < 16 {
+		u = pw
+	}
+	return u
+}
+
+func (m Menu) listviewH() int {
+	_, py, _ := m.panelgeom()
+	h := m.height - py - 5
+	if h < 1 {
+		h = 1
+	}
+	return h
+}
+
+func (m Menu) clickpanel(row, cx int) (tea.Model, tea.Cmd) {
+	idx, kind, local := m.panel.hittest(row, m.panel.scroll)
+	switch kind {
+	case "search":
+		m.focus = focussearch
+		m.panel.focused = true
+		m.panel.serversfocused = false
+		m.panel.btnidx = -1
+		m.panel.search.focusend()
+		return m.withtick(nil)
+	case "header", "server":
+		items := m.panel.items()
+		if idx < 0 || idx >= len(items) {
+			return m, nil
+		}
+		m.focus = focusservers
+		m.panel.focused = false
+		m.panel.serversfocused = true
+		m.panel.cursor = idx
+		m.panel.btnidx = -1
+		if kind == "header" {
+			px, _, pw := m.panelgeom()
+			if local == 1 {
+				if b := headerbtnat(cx, px+2, panelusable(pw)); b >= 0 {
+					m.panel.btnidx = b
+					return m.runheaderbtn(items[idx])
+				}
+			}
+			url := m.panel.subs[items[idx].subidx].URL
+			m.panel.collapsed[url] = !m.panel.collapsed[url]
+			m.panel.clampscroll(m.listviewH())
+			return m.withtick(nil)
+		}
+		return m.selectserver(items[idx])
+	}
+	return m, nil
+}
+
+func (m Menu) wheelmove(dir int) (tea.Model, tea.Cmd) {
+	if m.panel.itemcount() == 0 {
+		return m, nil
+	}
+	m.panel.scroll += dir * 3
+	m.panel.clampscroll(m.listviewH())
+	return m.withtick(nil)
+}
+
+func (m Menu) View() string {
+	if m.mode == modeedit && m.width > 0 && m.height > 0 {
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.rendereditmodal())
+	}
+
+	unit, _, _, _ := m.viewunit()
 	if m.width == 0 || m.height == 0 {
 		return unit
 	}
@@ -811,7 +1007,7 @@ func (m Menu) View() string {
 	flash := m.flashlevel()
 	if m.width < twocolmin {
 		top := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, unit)
-		content := m.panel.render(m.width, m.height, busyurl, busybtn, dropdown, anchorurl, flash, m.chosenurl, m.chosenidx)
+		content := m.panel.render(m.width, m.height-lipgloss.Height(unit), busyurl, busybtn, dropdown, anchorurl, flash, m.chosenurl, m.chosenidx)
 		if m.mode == modeadd {
 			content = m.form.render(m.width)
 		}

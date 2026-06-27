@@ -27,6 +27,9 @@ var (
 	headerbtnst  = lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
 	headerbtnsel = lipgloss.NewStyle().Foreground(lipgloss.Color("16")).Background(btngray)
 
+	scrollthumbst = lipgloss.NewStyle().Bold(true).Foreground(btngray)
+	scrolltrackst = lipgloss.NewStyle().Foreground(lipgloss.Color("237"))
+
 	pinggood  = lipgloss.NewStyle().Foreground(lipgloss.Color("#A6E0AC"))
 	pingok    = lipgloss.NewStyle().Foreground(lipgloss.Color("#E0D6A6"))
 	pingbad   = lipgloss.NewStyle().Foreground(lipgloss.Color("#E0A6AC"))
@@ -54,6 +57,7 @@ type serverspanel struct {
 	tr             i18n.Strings
 	subs           []subscription.Subscription
 	cursor         int
+	scroll         int
 	btnidx         int
 	search         textinput
 	focused        bool
@@ -78,6 +82,139 @@ func (p serverspanel) items() []selitem {
 		}
 	}
 	return items
+}
+
+func (p serverspanel) subcardheight(s subscription.Subscription) int {
+	h := 5
+	if s.Note != "" {
+		h++
+	}
+	return h
+}
+
+func (p serverspanel) hittest(row, scroll int) (int, string, int) {
+	if row < 0 {
+		return -1, "", 0
+	}
+	if row < 1 {
+		return -1, "title", 0
+	}
+	if row < 4 {
+		return -1, "search", row - 1
+	}
+	target := row - 4 + scroll
+	y := 0
+	idx := 0
+	for _, sub := range p.subs {
+		h := p.subcardheight(sub)
+		if target < y+h {
+			return idx, "header", target - y
+		}
+		y += h
+		idx++
+		if !p.collapsed[sub.URL] {
+			for range sub.Servers {
+				if target < y+3 {
+					return idx, "server", target - y
+				}
+				y += 3
+				idx++
+			}
+		}
+		y++
+	}
+	return -1, "", 0
+}
+
+func (p serverspanel) listrow(url string) (int, bool) {
+	y := 0
+	for _, sub := range p.subs {
+		if sub.URL == url {
+			return y, true
+		}
+		y += p.subcardheight(sub)
+		if !p.collapsed[sub.URL] {
+			y += 3 * len(sub.Servers)
+		}
+		y++
+	}
+	return 0, false
+}
+
+func (p serverspanel) itemspan(idx int) (int, int) {
+	y := 0
+	i := 0
+	for _, sub := range p.subs {
+		h := p.subcardheight(sub)
+		if i == idx {
+			return y, h
+		}
+		y += h
+		i++
+		if !p.collapsed[sub.URL] {
+			for range sub.Servers {
+				if i == idx {
+					return y, 3
+				}
+				y += 3
+				i++
+			}
+		}
+		y++
+	}
+	return 0, 0
+}
+
+func (p serverspanel) listheight() int {
+	y := 0
+	for _, sub := range p.subs {
+		y += p.subcardheight(sub)
+		if !p.collapsed[sub.URL] {
+			y += 3 * len(sub.Servers)
+		}
+		y++
+	}
+	return y
+}
+
+func (p *serverspanel) clampscroll(viewh int) {
+	max := p.listheight() - viewh
+	if max < 0 {
+		max = 0
+	}
+	if p.scroll > max {
+		p.scroll = max
+	}
+	if p.scroll < 0 {
+		p.scroll = 0
+	}
+}
+
+func (p *serverspanel) ensurevisible(viewh int) {
+	if viewh < 1 {
+		return
+	}
+	start, h := p.itemspan(p.cursor)
+	if start < p.scroll {
+		p.scroll = start
+	}
+	if start+h > p.scroll+viewh {
+		p.scroll = start + h - viewh
+	}
+	p.clampscroll(viewh)
+}
+
+func headerbtnat(cx, cardleft, usable int) int {
+	x := cardleft + usable - 3
+	for i := headerbtns - 1; i >= 0; i-- {
+		w := lipgloss.Width(headerglyphs[i])
+		start := x - w + 1
+		if cx >= start && cx <= x {
+			return i
+		}
+		x = start - 2
+	}
+	return -1
 }
 
 func (p serverspanel) itemcount() int {
@@ -130,9 +267,6 @@ func (p serverspanel) render(width, height int, busyurl string, busybtn int, dro
 	header := paneltitlest.Render(p.tr.ServersTitle)
 	search := p.searchview(usable)
 
-	blocks := []string{header, search}
-	anchoridx := -1
-
 	if len(p.subs) == 0 {
 		v := 0x80 + int(flash*float64(0xff-0x80))
 		empty := lipgloss.NewStyle().
@@ -141,55 +275,99 @@ func (p serverspanel) render(width, height int, busyurl string, busybtn int, dro
 			Width(usable).
 			Align(lipgloss.Center).
 			Render(p.tr.NoSubs + "\n" + p.tr.AddSubHint)
-		blocks = append(blocks, "", empty)
-	} else {
-		sel := selitem{-1, -1}
-		if items := p.items(); p.cursor >= 0 && p.cursor < len(items) {
-			sel = items[p.cursor]
-		}
-		for si, sub := range p.subs {
-			headsel := p.serversfocused && sel.subidx == si && sel.srvidx == -1
-			collapsed := p.collapsed[sub.URL]
-			bb := -1
-			if sub.URL == busyurl {
-				bb = busybtn
-			}
-			if dropdown != "" && sub.URL == anchorurl {
-				anchoridx = len(blocks)
-			}
-			blocks = append(blocks, p.subcard(sub, usable, headsel, collapsed, bb))
-
-			if !collapsed {
-				var rows []string
-				for ri, srv := range sub.Servers {
-					srvsel := p.serversfocused && sel.subidx == si && sel.srvidx == ri
-					chosen := sub.URL == chosenurl && ri == chosenidx
-					rows = append(rows, p.servercard(srv, usable-2, srvsel, chosen))
-				}
-				if len(rows) > 0 {
-					block := lipgloss.JoinVertical(lipgloss.Left, rows...)
-					blocks = append(blocks, lipgloss.NewStyle().PaddingLeft(1).Render(block))
-				}
-			}
-			blocks = append(blocks, "")
-		}
+		body := lipgloss.JoinVertical(lipgloss.Left, header, search, "", empty)
+		return lipgloss.NewStyle().PaddingTop(1).PaddingLeft(2).Render(body)
 	}
 
-	body := lipgloss.JoinVertical(lipgloss.Left, blocks...)
+	sel := selitem{-1, -1}
+	if items := p.items(); p.cursor >= 0 && p.cursor < len(items) {
+		sel = items[p.cursor]
+	}
+
+	var blocks []string
+	for si, sub := range p.subs {
+		headsel := p.serversfocused && sel.subidx == si && sel.srvidx == -1
+		collapsed := p.collapsed[sub.URL]
+		bb := -1
+		if sub.URL == busyurl {
+			bb = busybtn
+		}
+		blocks = append(blocks, p.subcard(sub, usable, headsel, collapsed, bb))
+
+		if !collapsed {
+			var rows []string
+			for ri, srv := range sub.Servers {
+				srvsel := p.serversfocused && sel.subidx == si && sel.srvidx == ri
+				chosen := sub.URL == chosenurl && ri == chosenidx
+				rows = append(rows, p.servercard(srv, usable-2, srvsel, chosen))
+			}
+			if len(rows) > 0 {
+				block := lipgloss.JoinVertical(lipgloss.Left, rows...)
+				blocks = append(blocks, lipgloss.NewStyle().PaddingLeft(1).Render(block))
+			}
+		}
+		blocks = append(blocks, "")
+	}
+
+	listlines := strings.Split(lipgloss.JoinVertical(lipgloss.Left, blocks...), "\n")
+	total := len(listlines)
+	viewh := height - 5
+	if viewh < 1 {
+		viewh = 1
+	}
+	scroll := p.scroll
+	if scroll > total-viewh {
+		scroll = total - viewh
+	}
+	if scroll < 0 {
+		scroll = 0
+	}
+	end := scroll + viewh
+	if end > total {
+		end = total
+	}
+	visible := strings.Join(listlines[scroll:end], "\n")
+
+	body := lipgloss.JoinVertical(lipgloss.Left, header, search, visible)
 	panel := lipgloss.NewStyle().PaddingTop(1).PaddingLeft(2).Render(body)
 
-	if anchoridx >= 0 {
-		y := 1
-		for _, blk := range blocks[:anchoridx] {
-			y += lipgloss.Height(blk)
+	if total > viewh {
+		panel = placeoverlay(width-2, 5, scrollbarcol(viewh, total, scroll), panel)
+	}
+
+	if dropdown != "" {
+		if lr, ok := p.listrow(anchorurl); ok && lr-scroll >= 0 && lr-scroll < viewh {
+			x := 2 + usable - lipgloss.Width(dropdown)
+			if x < 2 {
+				x = 2
+			}
+			panel = placeoverlay(x, 5+lr-scroll, dropdown, panel)
 		}
-		x := 2 + usable - lipgloss.Width(dropdown)
-		if x < 2 {
-			x = 2
-		}
-		panel = placeoverlay(x, y, dropdown, panel)
 	}
 	return panel
+}
+
+func scrollbarcol(viewh, total, scroll int) string {
+	thumb := viewh * viewh / total
+	if thumb < 1 {
+		thumb = 1
+	}
+	pos := 0
+	if maxoff := total - viewh; maxoff > 0 {
+		pos = scroll * (viewh - thumb) / maxoff
+	}
+	var b strings.Builder
+	for i := 0; i < viewh; i++ {
+		if i >= pos && i < pos+thumb {
+			b.WriteString(scrollthumbst.Render("│"))
+		} else {
+			b.WriteString(scrolltrackst.Render("│"))
+		}
+		if i < viewh-1 {
+			b.WriteByte('\n')
+		}
+	}
+	return b.String()
 }
 
 func (p serverspanel) headerstrip(selected bool) string {
