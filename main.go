@@ -12,7 +12,7 @@ import (
 	"github.com/alexandria-proxy/alexandria-cli/internal/tui"
 )
 
-var version = "0.1.6-dev"
+var version = "omega-0.2.1"
 
 //go:embed core/manifest.json
 var coremanifest []byte
