@@ -41,9 +41,8 @@ var (
 	disconnectbtnblur = lipgloss.NewStyle().Bold(true).Padding(0, 1).Background(lipgloss.Color("#9C7A7E")).Foreground(lipgloss.Color("237"))
 	timerstyle        = lipgloss.NewStyle().Bold(true).PaddingLeft(2).Foreground(btngray)
 
-	modebtnsel = lipgloss.NewStyle().Bold(true).Padding(0, 1).Background(btngray).Foreground(lipgloss.Color("16"))
-	modebtnon  = lipgloss.NewStyle().Bold(true).Padding(0, 1).Background(lipgloss.Color("237")).Foreground(lipgloss.Color("252"))
-	modebtnoff = lipgloss.NewStyle().Padding(0, 1).Foreground(lipgloss.Color("241"))
+	modebtnsel = lipgloss.NewStyle().Bold(true).Background(btngray).Foreground(lipgloss.Color("16"))
+	modeplain  = lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
 
 	actionrow    = lipgloss.NewStyle().Padding(0, 1).Foreground(lipgloss.Color("250"))
 	actionrowsel = lipgloss.NewStyle().Bold(true).Padding(0, 1).Background(btngray).Foreground(lipgloss.Color("16"))
@@ -87,6 +86,8 @@ const (
 )
 
 type menutickmsg struct{}
+
+type timertickmsg struct{}
 
 type subsloadedmsg struct{ subs []subscription.Subscription }
 
@@ -176,6 +177,8 @@ type connectresultmsg struct {
 type statusmsg struct {
 	connected bool
 	mode      string
+	url       string
+	idx       int
 }
 
 func connectcmd(url string, idx int, mode string) tea.Cmd {
@@ -214,7 +217,7 @@ func statuscmd() tea.Msg {
 	if err != nil || !resp.OK {
 		return statusmsg{}
 	}
-	return statusmsg{connected: resp.Connected, mode: resp.Mode}
+	return statusmsg{connected: resp.Connected, mode: resp.Mode, url: resp.ActiveURL, idx: resp.ActiveSrv}
 }
 
 func addsubcmd(url string) tea.Cmd {
@@ -271,17 +274,23 @@ type Menu struct {
 	actionstart   time.Time
 	actionmsg     string
 
-	connmode   string
-	connecting bool
-	connerr    string
-	flashat    time.Time
+	connmode     string
+	connecting   bool
+	connerr      string
+	flashat      time.Time
+	timerticking bool
+
+	chosenurl string
+	chosenidx int
+	pendurl   string
+	pendidx   int
 }
 
 func NewMenu(lang, mono, color string) Menu {
 	monocells, w := parselogo(mono)
 	colorcells, _ := parselogo(color)
 	tr := i18n.T(lang)
-	return Menu{tr: tr, monocells: monocells, colorcells: colorcells, colorlogo: rendercells(colorcells), logow: w, panel: newserverspanel(tr), ticking: true, connmode: "proxy"}
+	return Menu{tr: tr, monocells: monocells, colorcells: colorcells, colorlogo: rendercells(colorcells), logow: w, panel: newserverspanel(tr), ticking: true, connmode: "proxy", chosenidx: -1, pendidx: -1}
 }
 
 func (m Menu) Init() tea.Cmd {
@@ -290,17 +299,26 @@ func (m Menu) Init() tea.Cmd {
 
 func (m Menu) tick() tea.Cmd {
 	d := idletick
-	switch {
-	case m.revealing || m.actionrunning || m.connecting:
+	if m.revealing || m.actionrunning || m.connecting {
 		d = revealtick
-	case m.connected:
-		d = time.Second
 	}
 	return tea.Tick(d, func(time.Time) tea.Msg { return menutickmsg{} })
 }
 
+func timertick() tea.Cmd {
+	return tea.Tick(time.Second, func(time.Time) tea.Msg { return timertickmsg{} })
+}
+
+func (m *Menu) starttimer() tea.Cmd {
+	if m.connected && !m.timerticking {
+		m.timerticking = true
+		return timertick()
+	}
+	return nil
+}
+
 func (m Menu) animating() bool {
-	return m.revealing || m.connected || m.connecting ||
+	return m.revealing || m.connecting ||
 		m.focus == focussearch || m.mode == modeadd ||
 		(m.editordrag && m.editordragdir != 0) ||
 		m.actionrunning || m.flashlevel() > 0
@@ -353,8 +371,18 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, m.tick()
+	case timertickmsg:
+		if !m.connected {
+			m.timerticking = false
+			return m, nil
+		}
+		return m, timertick()
 	case subsloadedmsg:
 		m.panel.subs = msg.subs
+		m.panel.cursor = 0
+		if m.chosenurl == "" {
+			m.defaultchosen()
+		}
 		return m, nil
 	case addresultmsg:
 		m.form.loading = false
@@ -394,13 +422,21 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.withtick(nil)
 		}
 		m.connerr = ""
+		if msg.connected {
+			m.chosenurl, m.chosenidx = m.pendurl, m.pendidx
+		}
 		if msg.connected != m.connected {
 			m.animconnect(msg.connected)
 		}
-		return m.withtick(nil)
+		timer := m.starttimer()
+		model, cmd := m.withtick(nil)
+		return model, tea.Batch(cmd, timer)
 	case statusmsg:
 		if msg.mode != "" {
 			m.connmode = msg.mode
+		}
+		if msg.connected {
+			m.chosenurl, m.chosenidx = msg.url, msg.idx
 		}
 		if msg.connected && !m.connected && !m.connecting {
 			m.connected = true
@@ -408,7 +444,9 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.reverse = false
 			m.since = time.Now()
 		}
-		return m.withtick(nil)
+		timer := m.starttimer()
+		model, cmd := m.withtick(nil)
+		return model, tea.Batch(cmd, timer)
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		return m, tea.HideCursor
@@ -558,17 +596,7 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m.openeditor(it)
 				}
 				return m, nil
-			case " ":
-				if header {
-					url := m.panel.subs[it.subidx].URL
-					m.panel.collapsed[url] = !m.panel.collapsed[url]
-					return m, nil
-				}
-				if hasit {
-					return m.openeditor(it)
-				}
-				return m, nil
-			case "enter":
+			case " ", "enter":
 				if !hasit {
 					return m, nil
 				}
@@ -580,7 +608,7 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					return m.runheaderbtn(it)
 				}
-				return m.openeditor(it)
+				return m.selectserver(it)
 			}
 			return m, nil
 		}
@@ -650,25 +678,53 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.connecting = true
 				return m.withtick(disconnectcmd())
 			}
-			url, idx, ok := m.connserver()
+			url, idx, ok := m.chosenserver()
 			if !ok {
 				m.flashat = time.Now()
 				return m.withtick(nil)
 			}
 			m.connecting = true
 			m.connerr = ""
+			m.pendurl, m.pendidx = url, idx
 			return m.withtick(connectcmd(url, idx, m.connmode))
 		}
 	}
 	return m, nil
 }
 
-func (m Menu) connserver() (string, int, bool) {
-	items := m.panel.items()
-	if m.panel.cursor >= 0 && m.panel.cursor < len(items) {
-		it := items[m.panel.cursor]
+func (m Menu) selectserver(it selitem) (tea.Model, tea.Cmd) {
+	if it.srvidx < 0 {
+		return m, nil
+	}
+	url := m.panel.subs[it.subidx].URL
+	if url == m.chosenurl && it.srvidx == m.chosenidx {
+		return m, nil
+	}
+	m.chosenurl, m.chosenidx = url, it.srvidx
+	if m.connected && !m.connecting {
+		m.connecting = true
+		m.connerr = ""
+		m.pendurl, m.pendidx = url, it.srvidx
+		m.animconnect(false)
+		return m.withtick(connectcmd(url, it.srvidx, m.connmode))
+	}
+	return m, nil
+}
+
+func (m *Menu) defaultchosen() {
+	for _, it := range m.panel.items() {
 		if it.srvidx >= 0 {
-			return m.panel.subs[it.subidx].URL, it.srvidx, true
+			m.chosenurl, m.chosenidx = m.panel.subs[it.subidx].URL, it.srvidx
+			return
+		}
+	}
+	m.chosenurl, m.chosenidx = "", -1
+}
+
+func (m Menu) chosenserver() (string, int, bool) {
+	if m.chosenurl != "" && m.chosenidx >= 0 {
+		if sub, ok := m.subbyurl(m.chosenurl); ok && m.chosenidx < len(sub.Servers) {
+			return m.chosenurl, m.chosenidx, true
 		}
 	}
 	for _, sub := range m.panel.subs {
@@ -755,7 +811,7 @@ func (m Menu) View() string {
 	flash := m.flashlevel()
 	if m.width < twocolmin {
 		top := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, unit)
-		content := m.panel.render(m.width, m.height, busyurl, busybtn, dropdown, anchorurl, flash)
+		content := m.panel.render(m.width, m.height, busyurl, busybtn, dropdown, anchorurl, flash, m.chosenurl, m.chosenidx)
 		if m.mode == modeadd {
 			content = m.form.render(m.width)
 		}
@@ -764,7 +820,7 @@ func (m Menu) View() string {
 
 	leftw := m.width / 2
 	rightw := m.width - leftw
-	rightcontent := m.panel.render(rightw, m.height, busyurl, busybtn, dropdown, anchorurl, flash)
+	rightcontent := m.panel.render(rightw, m.height, busyurl, busybtn, dropdown, anchorurl, flash, m.chosenurl, m.chosenidx)
 	if m.mode == modeadd {
 		rightcontent = m.form.render(rightw)
 	}
@@ -1182,16 +1238,16 @@ func (m Menu) searchwidth() int {
 func (m Menu) rendermode() string {
 	focused := m.focus == focusmode && m.mode == modelist
 	pill := func(label, mode string) string {
-		switch {
-		case m.connmode == mode && focused:
-			return modebtnsel.Render(label)
-		case m.connmode == mode:
-			return modebtnon.Render(label)
-		default:
-			return modebtnoff.Render(label)
+		circle := "○"
+		if m.connmode == mode {
+			circle = "●"
 		}
+		if m.connmode == mode && focused {
+			return modebtnsel.Render(circle + " " + label)
+		}
+		return modeplain.Render(circle + " " + label)
 	}
-	return lipgloss.JoinHorizontal(lipgloss.Center, pill("proxy", "proxy"), "  ", pill("tun", "tun"))
+	return lipgloss.JoinHorizontal(lipgloss.Center, pill("Proxy", "proxy"), "   ", pill("Tun", "tun"))
 }
 
 func rendercells(cells [][]cell) string {

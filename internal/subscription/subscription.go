@@ -296,20 +296,32 @@ func parsess(link string) (Server, bool) {
 		Name:     name,
 		Host:     u.Hostname(),
 		Port:     port,
-		Protocol: "SHADOWSOCKS",
+		Protocol: "shadowsocks",
 		Raw:      link,
 	}, true
 }
 
 func chainlabel(proto, network, security string) string {
-	parts := []string{proto}
+	parts := []string{strings.ToLower(proto)}
 	if network != "" {
-		parts = append(parts, strings.ToUpper(network))
+		parts = append(parts, netlabel(network))
 	}
 	if security != "" && security != "none" {
-		parts = append(parts, strings.ToUpper(security))
+		parts = append(parts, strings.ToLower(security))
 	}
 	return strings.Join(parts, " / ")
+}
+
+func netlabel(network string) string {
+	switch strings.ToLower(network) {
+	case "splithttp":
+		return "xhttp"
+	case "h2", "h3":
+		return "http"
+	case "raw":
+		return "tcp"
+	}
+	return strings.ToLower(network)
 }
 
 func decodeb64(s string) (string, bool) {

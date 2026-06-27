@@ -118,7 +118,7 @@ func (p serverspanel) searchview(usable int) string {
 		Render(text)
 }
 
-func (p serverspanel) render(width, height int, busyurl string, busybtn int, dropdown, anchorurl string, flash float64) string {
+func (p serverspanel) render(width, height int, busyurl string, busybtn int, dropdown, anchorurl string, flash float64, chosenurl string, chosenidx int) string {
 	if width < 8 {
 		return ""
 	}
@@ -163,7 +163,8 @@ func (p serverspanel) render(width, height int, busyurl string, busybtn int, dro
 				var rows []string
 				for ri, srv := range sub.Servers {
 					srvsel := p.serversfocused && sel.subidx == si && sel.srvidx == ri
-					rows = append(rows, p.servercard(srv, usable-2, srvsel))
+					chosen := sub.URL == chosenurl && ri == chosenidx
+					rows = append(rows, p.servercard(srv, usable-2, srvsel, chosen))
 				}
 				if len(rows) > 0 {
 					block := lipgloss.JoinVertical(lipgloss.Left, rows...)
@@ -250,7 +251,7 @@ func (p serverspanel) subcard(s subscription.Subscription, usable int, selected,
 	return cardbox(lines, border, usable)
 }
 
-func (p serverspanel) servercard(s subscription.Server, w int, selected bool) string {
+func (p serverspanel) servercard(s subscription.Server, w int, selected, chosen bool) string {
 	bodyw := w - 4
 	if bodyw < 1 {
 		bodyw = 1
@@ -264,6 +265,11 @@ func (p serverspanel) servercard(s subscription.Server, w int, selected bool) st
 	}
 
 	flag, name := splitflag(s.Name)
+
+	namepart := namest.Render(name)
+	if chosen {
+		namepart += " " + pinggood.Render("●")
+	}
 
 	ping := arrowst.Render("›")
 	if s.PingMs != 0 {
@@ -283,7 +289,7 @@ func (p serverspanel) servercard(s subscription.Server, w int, selected bool) st
 		textw = 1
 	}
 
-	nameline := spread(namest.Render(name), ping, textw)
+	nameline := spread(namepart, ping, textw)
 	protoline := panelfaint.Render(spread(proto, "", textw))
 	content := lipgloss.JoinVertical(lipgloss.Left, nameline, protoline)
 
@@ -453,14 +459,18 @@ func fmtdur(d time.Duration) string {
 	return fmt.Sprintf("%dh", h)
 }
 
+func trimdec(f float64) string {
+	return strings.TrimSuffix(fmt.Sprintf("%.1f", f), ".0")
+}
+
 func humanbytes(n int64) string {
 	switch {
 	case n >= 1<<40:
-		return fmt.Sprintf("%.1ftb", float64(n)/(1<<40))
+		return trimdec(float64(n)/(1<<40)) + "tb"
 	case n >= 1<<30:
-		return fmt.Sprintf("%.1fgb", float64(n)/(1<<30))
+		return trimdec(float64(n)/(1<<30)) + "gb"
 	case n >= 1<<20:
-		return fmt.Sprintf("%.1fmb", float64(n)/(1<<20))
+		return trimdec(float64(n)/(1<<20)) + "mb"
 	default:
 		return fmt.Sprintf("%dkb", n/(1<<10))
 	}
