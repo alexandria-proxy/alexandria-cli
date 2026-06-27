@@ -18,9 +18,16 @@ import (
 )
 
 type state struct {
-	mu   sync.Mutex
-	subs []subscription.Subscription
-	conn conn
+	mu       sync.Mutex
+	subs     []subscription.Subscription
+	conn     conn
+	quit     chan struct{}
+	quitonce sync.Once
+}
+
+func (s *state) shutdown() {
+	time.Sleep(150 * time.Millisecond)
+	s.quitonce.Do(func() { close(s.quit) })
 }
 
 func (s *state) findserver(url string, idx int) (subscription.Server, bool) {
@@ -45,7 +52,7 @@ func Run() error {
 
 	subs, _ := subscription.Load()
 	subscription.Sort(subs)
-	s := &state{subs: subs}
+	s := &state{subs: subs, quit: make(chan struct{})}
 
 	ln, err := ipc.Listen(path, s.handle)
 	if err != nil {
@@ -58,7 +65,10 @@ func Run() error {
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
-	<-stop
+	select {
+	case <-stop:
+	case <-s.quit:
+	}
 
 	s.conn.stopnow()
 	_ = os.Remove(pid)
@@ -115,6 +125,13 @@ func (s *state) handle(req ipc.Request) ipc.Response {
 
 	case "status":
 		return s.conn.status()
+
+	case "shutdown":
+		if s.conn.isconnected() {
+			return ipc.Response{OK: true, Connected: true}
+		}
+		go s.shutdown()
+		return ipc.Response{OK: true}
 
 	case "add_subscription":
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -243,6 +260,7 @@ func Ensure() error {
 		return err
 	}
 	cmd := exec.Command(exe, "--daemon")
+	cmd.Args[0] = "alexad"
 	cmd.SysProcAttr = detachattr()
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
 	if err := cmd.Start(); err != nil {

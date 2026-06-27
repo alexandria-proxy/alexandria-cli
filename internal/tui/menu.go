@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"math"
 	"os"
 	"strings"
 	"time"
@@ -24,16 +23,9 @@ const (
 	revealedge       = 0.22
 	revealpeak       = 0.85
 
-	idletick       = 80 * time.Millisecond
-	busymin        = time.Second
-	flashdur       = 2 * time.Second
-	ringcycle      = 5.0
-	ringsweep      = 1.5
-	ringmax        = 0.85
-	ringwidth      = 0.06
-	ringpeak       = 0.15
-	ringdelay      = 2.0
-	ringretractdur = 0.18
+	idletick = 80 * time.Millisecond
+	busymin  = time.Second
+	flashdur = 2 * time.Second
 
 	twocolmin = 96
 )
@@ -208,6 +200,11 @@ func disconnectcmd() tea.Cmd {
 	}
 }
 
+func quitcmd() tea.Msg {
+	_, _ = ipc.Send(ipc.Request{Cmd: "shutdown"})
+	return tea.Quit()
+}
+
 func statuscmd() tea.Msg {
 	resp, err := ipc.Send(ipc.Request{Cmd: "status"})
 	if err != nil || !resp.OK {
@@ -243,11 +240,6 @@ type Menu struct {
 	reverse    bool
 	frame      int
 	since      time.Time
-	ringat     time.Time
-	retracting bool
-	retractat  time.Time
-	ringfrom   float64
-	ringto     float64
 	panel      serverspanel
 	focus      focuszone
 	mode       panelmode
@@ -294,14 +286,17 @@ func (m Menu) Init() tea.Cmd {
 
 func (m Menu) tick() tea.Cmd {
 	d := idletick
-	if m.revealing || m.actionrunning {
+	switch {
+	case m.revealing || m.actionrunning:
 		d = revealtick
+	case m.connected:
+		d = time.Second
 	}
 	return tea.Tick(d, func(time.Time) tea.Msg { return menutickmsg{} })
 }
 
 func (m Menu) animating() bool {
-	return m.revealing || m.retracting || m.connected ||
+	return m.revealing || m.connected ||
 		m.focus == focussearch || m.mode == modeadd ||
 		(m.editordrag && m.editordragdir != 0) ||
 		m.actionrunning || m.flashlevel() > 0
@@ -340,13 +335,7 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.frame >= end {
 				m.revealing = false
-				if m.connected {
-					m.ringat = time.Now()
-				}
 			}
-		}
-		if m.retracting && time.Since(m.retractat).Seconds() >= ringretractdur {
-			m.retracting = false
 		}
 		if m.mode == modeedit && m.editordrag && m.editordragdir != 0 {
 			ew, eh := m.editordims()
@@ -414,7 +403,6 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.revealing = false
 			m.reverse = false
 			m.since = time.Now()
-			m.ringat = time.Now()
 		}
 		return m.withtick(nil)
 	case tea.WindowSizeMsg:
@@ -431,7 +419,7 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateeditor(msg)
 		}
 		if msg.String() == "ctrl+c" {
-			return m, tea.Quit
+			return m, quitcmd
 		}
 		if m.mode == modeactions {
 			return m.updateactions(msg)
@@ -459,7 +447,7 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.focus == focussearch {
 			switch msg.String() {
 			case "ctrl+c":
-				return m, tea.Quit
+				return m, quitcmd
 			case "tab":
 				m.focus = focusconnect
 				m.panel.focused = false
@@ -484,6 +472,10 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.panel.cursor = 0
 				}
 				return m, nil
+			case "up":
+				m.focus = focusmode
+				m.panel.focused = false
+				return m.withtick(nil)
 			case "left":
 				if m.panel.search.cursorpos == 0 {
 					m.focus = focusconnect
@@ -491,15 +483,14 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 			case "down":
-				if m.panel.search.value == "" {
-					if m.panel.itemcount() > 0 {
-						m.focus = focusservers
-						m.panel.focused = false
-						m.panel.serversfocused = true
-						m.panel.cursor = 0
-					}
-					return m, nil
+				if m.panel.itemcount() > 0 {
+					m.focus = focusservers
+					m.panel.focused = false
+					m.panel.serversfocused = true
+					m.panel.cursor = 0
+					m.panel.btnidx = -1
 				}
+				return m, nil
 			}
 			m.panel.search.handlekey(msg, m.searchwidth())
 			return m, nil
@@ -592,7 +583,7 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.focus == focusmode {
 			switch msg.String() {
 			case "ctrl+c", "q":
-				return m, tea.Quit
+				return m, quitcmd
 			case "esc", "up":
 				m.focus = focusconnect
 				return m.withtick(nil)
@@ -609,12 +600,21 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.connmode = "proxy"
 				}
 				return m, nil
-			case "tab", "down":
+			case "down":
+				m.focus = focussearch
+				m.panel.focused = true
+				m.panel.search.focusend()
+				return m.withtick(nil)
+			case "tab":
 				if m.panel.itemcount() > 0 {
 					m.focus = focusservers
 					m.panel.serversfocused = true
 					m.panel.cursor = 0
 					m.panel.btnidx = -1
+				} else {
+					m.focus = focussearch
+					m.panel.focused = true
+					m.panel.search.focusend()
 				}
 				return m.withtick(nil)
 			}
@@ -622,7 +622,7 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch msg.String() {
 		case "ctrl+c", "q", "esc":
-			return m, tea.Quit
+			return m, quitcmd
 		case "right", "tab":
 			if m.panel.itemcount() > 0 {
 				m.focus = focusservers
@@ -677,7 +677,6 @@ func (m Menu) connserver() (string, int, bool) {
 
 func (m *Menu) animconnect(target bool) {
 	p := m.phase()
-	rnow, ron := m.ring()
 	m.connected = target
 	m.reverse = !m.connected
 	m.revealing = true
@@ -686,19 +685,8 @@ func (m *Menu) animconnect(target bool) {
 	} else {
 		m.frame = int((2.0 - p) / 2.0 * float64(revealframes))
 	}
-	m.ringat = time.Time{}
 	if m.connected {
 		m.since = time.Now()
-		m.retracting = false
-	} else {
-		m.retracting = ron
-		m.ringfrom = rnow
-		m.retractat = time.Now()
-		if rnow/ringmax > 0.4 {
-			m.ringto = ringmax + ringwidth
-		} else {
-			m.ringto = 0
-		}
 	}
 }
 
@@ -1200,7 +1188,7 @@ func rendercells(cells [][]cell) string {
 	for r := range cells {
 		for c := range cells[r] {
 			cl := cells[r][c]
-			b.WriteString(sgr(cl.fg, cl.bg, cl.reverse))
+			writesgr(&b, cl.fg, cl.bg, cl.reverse)
 			b.WriteRune(cl.ch)
 		}
 		b.WriteString("\x1b[0m")
@@ -1213,14 +1201,11 @@ func rendercells(cells [][]cell) string {
 
 func (m Menu) renderlogo() string {
 	if m.connected && !m.revealing {
-		if _, ringon := m.ring(); !ringon {
-			return m.colorlogo
-		}
+		return m.colorlogo
 	}
 
 	wf, hf := float64(m.logow), float64(len(m.colorcells))
 	phase := m.phase()
-	ringr, ringon := m.ring()
 
 	var b strings.Builder
 	for r := range m.colorcells {
@@ -1240,14 +1225,7 @@ func (m Menu) renderlogo() string {
 			} else if !m.connected && r < len(m.monocells) && c < len(m.monocells[r]) {
 				cl = m.monocells[r][c]
 			}
-			if ringon && lit(cl.fg, cl.bg) {
-				nx, ny := float64(c)/wf-0.5, float64(r)/hf-0.5
-				if d := math.Abs(math.Hypot(nx, ny) - ringr); d < ringwidth {
-					t := (1 - d/ringwidth) * ringpeak
-					cl.fg, cl.bg = glint(cl.fg, t), glint(cl.bg, t)
-				}
-			}
-			b.WriteString(sgr(cl.fg, cl.bg, cl.reverse))
+			writesgr(&b, cl.fg, cl.bg, cl.reverse)
 			b.WriteRune(cl.ch)
 		}
 		b.WriteString("\x1b[0m")
@@ -1256,39 +1234,6 @@ func (m Menu) renderlogo() string {
 		}
 	}
 	return b.String()
-}
-
-func glint(c *rgb, t float64) *rgb {
-	if c == nil {
-		return nil
-	}
-	if 0.299*float64(c.r)+0.587*float64(c.g)+0.114*float64(c.b) < 160 {
-		return boost(c, t)
-	}
-	f := 1 - t
-	return &rgb{int(float64(c.r)*f + 0.5), int(float64(c.g)*f + 0.5), int(float64(c.b)*f + 0.5)}
-}
-
-func (m Menu) ring() (float64, bool) {
-	if m.retracting {
-		el := time.Since(m.retractat).Seconds()
-		if el >= ringretractdur {
-			return 0, false
-		}
-		return m.ringfrom + (m.ringto-m.ringfrom)*(el/ringretractdur), true
-	}
-	if !m.connected || m.revealing || m.ringat.IsZero() {
-		return 0, false
-	}
-	el := time.Since(m.ringat).Seconds() - ringdelay
-	if el < 0 {
-		return 0, false
-	}
-	cyc := math.Mod(el, ringcycle)
-	if cyc > ringsweep {
-		return 0, false
-	}
-	return cyc / ringsweep * ringmax, true
 }
 
 func (m Menu) phase() float64 {

@@ -36,6 +36,12 @@ func isxrayjson(raw string) bool {
 	return strings.HasPrefix(strings.TrimSpace(raw), "{")
 }
 
+func (c *conn) isconnected() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.connected
+}
+
 func (c *conn) status() ipc.Response {
 	c.mu.Lock()
 	defer c.mu.Unlock()

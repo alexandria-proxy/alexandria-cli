@@ -67,7 +67,7 @@ type selitem struct {
 }
 
 func (p serverspanel) items() []selitem {
-	var items []selitem
+	items := make([]selitem, 0, p.itemcount())
 	for si, sub := range p.subs {
 		items = append(items, selitem{si, -1})
 		if p.collapsed[sub.URL] {

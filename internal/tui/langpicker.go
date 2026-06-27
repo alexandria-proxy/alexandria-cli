@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"math"
 	"regexp"
 	"strconv"
@@ -192,10 +191,12 @@ func parsecells(line string) []cell {
 	var fg, bg *rgb
 	reverse := false
 	for i := 0; i < len(line); {
-		if loc := ansiseq.FindStringIndex(line[i:]); loc != nil && loc[0] == 0 {
-			fg, bg, reverse = applysgr(line[i+2:i+loc[1]-1], fg, bg, reverse)
-			i += loc[1]
-			continue
+		if line[i] == 0x1b {
+			if loc := ansiseq.FindStringIndex(line[i:]); loc != nil && loc[0] == 0 {
+				fg, bg, reverse = applysgr(line[i+2:i+loc[1]-1], fg, bg, reverse)
+				i += loc[1]
+				continue
+			}
 		}
 		r, size := utf8.DecodeRuneInString(line[i:])
 		cells = append(cells, cell{ch: r, fg: fg, bg: bg, reverse: reverse})
@@ -261,18 +262,39 @@ func boost(c *rgb, t float64) *rgb {
 	}
 }
 
-func sgr(fg, bg *rgb, rev bool) string {
-	p := []string{"0"}
+func writeint(b *strings.Builder, n int) {
+	var buf [8]byte
+	b.Write(strconv.AppendInt(buf[:0], int64(n), 10))
+}
+
+func writesgr(b *strings.Builder, fg, bg *rgb, rev bool) {
+	b.WriteString("\x1b[0")
 	if rev {
-		p = append(p, "7")
+		b.WriteString(";7")
 	}
 	if fg != nil {
-		p = append(p, fmt.Sprintf("38;2;%d;%d;%d", fg.r, fg.g, fg.b))
+		b.WriteString(";38;2;")
+		writeint(b, fg.r)
+		b.WriteByte(';')
+		writeint(b, fg.g)
+		b.WriteByte(';')
+		writeint(b, fg.b)
 	}
 	if bg != nil {
-		p = append(p, fmt.Sprintf("48;2;%d;%d;%d", bg.r, bg.g, bg.b))
+		b.WriteString(";48;2;")
+		writeint(b, bg.r)
+		b.WriteByte(';')
+		writeint(b, bg.g)
+		b.WriteByte(';')
+		writeint(b, bg.b)
 	}
-	return "\x1b[" + strings.Join(p, ";") + "m"
+	b.WriteByte('m')
+}
+
+func sgr(fg, bg *rgb, rev bool) string {
+	var b strings.Builder
+	writesgr(&b, fg, bg, rev)
+	return b.String()
 }
 
 func stampcenter(base, over string, width int) string {
