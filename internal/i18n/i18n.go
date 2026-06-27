@@ -27,23 +27,20 @@ type Strings struct {
 	Fetching         string
 
 	EditServerTitle string
-	JSONLabel       string
 	EditHint        string
 	SaveBtn         string
 
-	ActionsTitle      string
-	ActionUpdate      string
-	ActionTestPing    string
-	ActionPin         string
-	ActionUnpin       string
-	ActionCopyURL     string
-	ActionEdit        string
-	ActionRemove      string
-	Updating          string
-	Pinging           string
-	Copied            string
-	Dead              string
-	NoServerToConnect string
+	ActionUpdate   string
+	ActionTestPing string
+	ActionPin      string
+	ActionUnpin    string
+	ActionCopyURL  string
+	ActionEdit     string
+	ActionRemove   string
+	Updating       string
+	Pinging        string
+	Copied         string
+	Dead           string
 }
 
 var table = map[string]Strings{
@@ -73,23 +70,20 @@ var table = map[string]Strings{
 		Fetching:         "Fetching…",
 
 		EditServerTitle: "Edit server configuration",
-		JSONLabel:       "JSON",
 		EditHint:        "A wrong config will break the connection. Edit only if you know what you're doing.",
 		SaveBtn:         "Save",
 
-		ActionsTitle:      "actions",
-		ActionUpdate:      "update",
-		ActionTestPing:    "ping",
-		ActionPin:         "pin",
-		ActionUnpin:       "unpin",
-		ActionCopyURL:     "copy url",
-		ActionEdit:        "edit",
-		ActionRemove:      "remove",
-		Updating:          "updating…",
-		Pinging:           "pinging…",
-		Copied:            "copied!",
-		Dead:              "dead",
-		NoServerToConnect: "no server to connect",
+		ActionUpdate:   "update",
+		ActionTestPing: "ping",
+		ActionPin:      "pin",
+		ActionUnpin:    "unpin",
+		ActionCopyURL:  "copy url",
+		ActionEdit:     "edit",
+		ActionRemove:   "remove",
+		Updating:       "updating…",
+		Pinging:        "pinging…",
+		Copied:         "copied!",
+		Dead:           "dead",
 	},
 	"ru": {
 		ChooseLanguage: "Выберите язык",
@@ -118,23 +112,20 @@ var table = map[string]Strings{
 		Fetching:         "Загрузка…",
 
 		EditServerTitle: "Редактирование конфигурации сервера",
-		JSONLabel:       "JSON",
 		EditHint:        "Неверный конфиг порвёт соединение. Редактируйте только если знаете что делаете.",
 		SaveBtn:         "Сохранить",
 
-		ActionsTitle:      "действия",
-		ActionUpdate:      "обновить",
-		ActionTestPing:    "пинг",
-		ActionPin:         "закрепить",
-		ActionUnpin:       "открепить",
-		ActionCopyURL:     "копировать url",
-		ActionEdit:        "изменить",
-		ActionRemove:      "удалить",
-		Updating:          "обновление…",
-		Pinging:           "проверка пинга…",
-		Copied:            "скопировано!",
-		Dead:              "dead",
-		NoServerToConnect: "нет сервера для подключения",
+		ActionUpdate:   "обновить",
+		ActionTestPing: "пинг",
+		ActionPin:      "закрепить",
+		ActionUnpin:    "открепить",
+		ActionCopyURL:  "копировать url",
+		ActionEdit:     "изменить",
+		ActionRemove:   "удалить",
+		Updating:       "обновление…",
+		Pinging:        "проверка пинга…",
+		Copied:         "скопировано!",
+		Dead:           "dead",
 	},
 	"fa": {
 		ChooseLanguage: "زبان را انتخاب کنید",
@@ -163,23 +154,20 @@ var table = map[string]Strings{
 		Fetching:         "در حال دریافت…",
 
 		EditServerTitle: "ویرایش پیکربندی سرور",
-		JSONLabel:       "JSON",
 		EditHint:        "پیکربندی نادرست اتصال را قطع می‌کند. فقط اگر می‌دانید چه می‌کنید ویرایش کنید.",
 		SaveBtn:         "ذخیره",
 
-		ActionsTitle:      "عملیات",
-		ActionUpdate:      "بروزرسانی",
-		ActionTestPing:    "پینگ",
-		ActionPin:         "سنجاق",
-		ActionUnpin:       "برداشتن سنجاق",
-		ActionCopyURL:     "کپی آدرس",
-		ActionEdit:        "ویرایش",
-		ActionRemove:      "حذف",
-		Updating:          "در حال بروزرسانی…",
-		Pinging:           "در حال پینگ…",
-		Copied:            "کپی شد!",
-		Dead:              "dead",
-		NoServerToConnect: "سروری برای اتصال نیست",
+		ActionUpdate:   "بروزرسانی",
+		ActionTestPing: "پینگ",
+		ActionPin:      "سنجاق",
+		ActionUnpin:    "برداشتن سنجاق",
+		ActionCopyURL:  "کپی آدرس",
+		ActionEdit:     "ویرایش",
+		ActionRemove:   "حذف",
+		Updating:       "در حال بروزرسانی…",
+		Pinging:        "در حال پینگ…",
+		Copied:         "کپی شد!",
+		Dead:           "dead",
 	},
 }
 

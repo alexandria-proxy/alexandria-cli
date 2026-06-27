@@ -26,6 +26,7 @@ const (
 
 	idletick       = 80 * time.Millisecond
 	busymin        = time.Second
+	flashdur       = 2 * time.Second
 	ringcycle      = 5.0
 	ringsweep      = 1.5
 	ringmax        = 0.85
@@ -276,6 +277,7 @@ type Menu struct {
 	connmode   string
 	connecting bool
 	connerr    string
+	flashat    time.Time
 }
 
 func NewMenu(lang, mono, color string) Menu {
@@ -301,7 +303,18 @@ func (m Menu) animating() bool {
 	return m.revealing || m.retracting || m.connected ||
 		m.focus == focussearch || m.mode == modeadd ||
 		(m.editordrag && m.editordragdir != 0) ||
-		m.actionrunning
+		m.actionrunning || m.flashlevel() > 0
+}
+
+func (m Menu) flashlevel() float64 {
+	if m.flashat.IsZero() {
+		return 0
+	}
+	e := time.Since(m.flashat)
+	if e >= flashdur {
+		return 0
+	}
+	return 1 - float64(e)/float64(flashdur)
 }
 
 func (m Menu) withtick(cmd tea.Cmd) (tea.Model, tea.Cmd) {
@@ -634,8 +647,8 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			url, idx, ok := m.connserver()
 			if !ok {
-				m.connerr = m.tr.NoServerToConnect
-				return m, nil
+				m.flashat = time.Now()
+				return m.withtick(nil)
 			}
 			m.connecting = true
 			m.connerr = ""
@@ -739,9 +752,10 @@ func (m Menu) View() string {
 		anchorurl = m.actionsuburl
 	}
 
+	flash := m.flashlevel()
 	if m.width < twocolmin {
 		top := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, unit)
-		content := m.panel.render(m.width, m.height, busyurl, busybtn, dropdown, anchorurl)
+		content := m.panel.render(m.width, m.height, busyurl, busybtn, dropdown, anchorurl, flash)
 		if m.mode == modeadd {
 			content = m.form.render(m.width)
 		}
@@ -750,7 +764,7 @@ func (m Menu) View() string {
 
 	leftw := m.width / 2
 	rightw := m.width - leftw
-	rightcontent := m.panel.render(rightw, m.height, busyurl, busybtn, dropdown, anchorurl)
+	rightcontent := m.panel.render(rightw, m.height, busyurl, busybtn, dropdown, anchorurl, flash)
 	if m.mode == modeadd {
 		rightcontent = m.form.render(rightw)
 	}

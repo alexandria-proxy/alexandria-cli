@@ -117,7 +117,7 @@ func (p serverspanel) searchview(usable int) string {
 		Render(text)
 }
 
-func (p serverspanel) render(width, height int, busyurl string, busybtn int, dropdown, anchorurl string) string {
+func (p serverspanel) render(width, height int, busyurl string, busybtn int, dropdown, anchorurl string, flash float64) string {
 	if width < 8 {
 		return ""
 	}
@@ -133,8 +133,10 @@ func (p serverspanel) render(width, height int, busyurl string, busybtn int, dro
 	anchoridx := -1
 
 	if len(p.subs) == 0 {
+		v := 0x80 + int(flash*float64(0xff-0x80))
 		empty := lipgloss.NewStyle().
-			Faint(true).
+			Bold(flash > 0.3).
+			Foreground(lipgloss.Color(fmt.Sprintf("#%02x%02x%02x", v, v, v))).
 			Width(usable).
 			Align(lipgloss.Center).
 			Render(p.tr.NoSubs + "\n" + p.tr.AddSubHint)
