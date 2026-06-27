@@ -15,7 +15,6 @@ import (
 
 	"github.com/alexandria-proxy/alexandria-cli/internal/ipc"
 	"github.com/alexandria-proxy/alexandria-cli/internal/subscription"
-	"github.com/alexandria-proxy/alexandria-cli/internal/xray"
 )
 
 type state struct {
@@ -103,13 +102,6 @@ func (s *state) handle(req ipc.Request) ipc.Response {
 		snapshot := append([]subscription.Subscription(nil), s.subs...)
 		s.mu.Unlock()
 		return ipc.Response{OK: true, Subscriptions: snapshot}
-
-	case "ensure_core":
-		path, err := xray.Ensure()
-		if err != nil {
-			return ipc.Response{Error: err.Error()}
-		}
-		return ipc.Response{OK: true, Path: path}
 
 	case "connect":
 		srv, ok := s.findserver(req.URL, req.SrvIdx)

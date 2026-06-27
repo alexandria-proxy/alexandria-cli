@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -364,13 +365,6 @@ func busyphase() float64 {
 	return float64(time.Now().UnixMilli()%cyc) / cyc
 }
 
-func absf(x float64) float64 {
-	if x < 0 {
-		return -x
-	}
-	return x
-}
-
 func shimmershade(t float64) lipgloss.Color {
 	if t < 0 {
 		t = 0
@@ -390,7 +384,7 @@ func busycard(lines []string, italics []bool, usable int, phase float64) string 
 	width := usable
 	pos := phase * float64(width)
 	colat := func(c int) lipgloss.Style {
-		d := absf(float64(c) - pos)
+		d := math.Abs(float64(c) - pos)
 		if half := float64(width) / 2; d > half {
 			d = float64(width) - d
 		}
@@ -447,9 +441,9 @@ func humanbytes(n int64) string {
 	case n >= 1<<40:
 		return fmt.Sprintf("%.1ftb", float64(n)/(1<<40))
 	case n >= 1<<30:
-		return fmt.Sprintf("%dgb", n/(1<<30))
+		return fmt.Sprintf("%.1fgb", float64(n)/(1<<30))
 	case n >= 1<<20:
-		return fmt.Sprintf("%dmb", n/(1<<20))
+		return fmt.Sprintf("%.1fmb", float64(n)/(1<<20))
 	default:
 		return fmt.Sprintf("%dkb", n/(1<<10))
 	}

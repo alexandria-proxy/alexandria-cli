@@ -39,7 +39,7 @@ func isxrayjson(raw string) bool {
 func (c *conn) status() ipc.Response {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return ipc.Response{OK: true, Connected: c.connected, Mode: c.mode, Active: c.url, Error: c.lasterr}
+	return ipc.Response{OK: true, Connected: c.connected, Mode: c.mode, Error: c.lasterr}
 }
 
 func (c *conn) disconnect() ipc.Response {

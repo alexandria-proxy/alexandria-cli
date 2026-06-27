@@ -236,6 +236,7 @@ type Menu struct {
 	tr         i18n.Strings
 	colorcells [][]cell
 	monocells  [][]cell
+	colorlogo  string
 	logow      int
 	connected  bool
 	revealing  bool
@@ -284,7 +285,7 @@ func NewMenu(lang, mono, color string) Menu {
 	monocells, w := parselogo(mono)
 	colorcells, _ := parselogo(color)
 	tr := i18n.T(lang)
-	return Menu{tr: tr, monocells: monocells, colorcells: colorcells, logow: w, panel: newserverspanel(tr), ticking: true, connmode: "proxy"}
+	return Menu{tr: tr, monocells: monocells, colorcells: colorcells, colorlogo: rendercells(colorcells), logow: w, panel: newserverspanel(tr), ticking: true, connmode: "proxy"}
 }
 
 func (m Menu) Init() tea.Cmd {
@@ -1194,7 +1195,29 @@ func (m Menu) rendermode() string {
 	return lipgloss.JoinHorizontal(lipgloss.Center, pill("proxy", "proxy"), "  ", pill("tun", "tun"))
 }
 
+func rendercells(cells [][]cell) string {
+	var b strings.Builder
+	for r := range cells {
+		for c := range cells[r] {
+			cl := cells[r][c]
+			b.WriteString(sgr(cl.fg, cl.bg, cl.reverse))
+			b.WriteRune(cl.ch)
+		}
+		b.WriteString("\x1b[0m")
+		if r < len(cells)-1 {
+			b.WriteByte('\n')
+		}
+	}
+	return b.String()
+}
+
 func (m Menu) renderlogo() string {
+	if m.connected && !m.revealing {
+		if _, ringon := m.ring(); !ringon {
+			return m.colorlogo
+		}
+	}
+
 	wf, hf := float64(m.logow), float64(len(m.colorcells))
 	phase := m.phase()
 	ringr, ringon := m.ring()

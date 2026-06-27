@@ -23,11 +23,9 @@ type Request struct {
 type Response struct {
 	OK            bool                        `json:"ok"`
 	Error         string                      `json:"error,omitempty"`
-	Path          string                      `json:"path,omitempty"`
 	Version       int                         `json:"version,omitempty"`
 	Connected     bool                        `json:"connected,omitempty"`
 	Mode          string                      `json:"mode,omitempty"`
-	Active        string                      `json:"active,omitempty"`
 	Subscriptions []subscription.Subscription `json:"subscriptions,omitempty"`
 }
 
