@@ -12,6 +12,7 @@ import (
 	"github.com/alexandria-proxy/alexandria-cli/internal/singbox"
 	"github.com/alexandria-proxy/alexandria-cli/internal/subscription"
 	"github.com/alexandria-proxy/alexandria-cli/internal/xray"
+	"github.com/alexandria-proxy/alexandria-cli/internal/xraygen"
 )
 
 type proc struct {
@@ -45,6 +46,13 @@ func isxrayjson(raw string) bool {
 	return strings.HasPrefix(strings.TrimSpace(raw), "{")
 }
 
+func buildxray(raw string) (string, error) {
+	if isxrayjson(raw) {
+		return raw, nil
+	}
+	return xraygen.Build(raw)
+}
+
 func (c *conn) isconnected() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -54,7 +62,11 @@ func (c *conn) isconnected() bool {
 func (c *conn) status() ipc.Response {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return ipc.Response{OK: true, Connected: c.connected, Mode: c.mode, Error: c.lasterr}
+	r := ipc.Response{OK: true, Connected: c.connected, Mode: c.mode, Error: c.lasterr}
+	if c.connected {
+		r.ActiveURL, r.ActiveSrv = c.url, c.srvidx
+	}
+	return r
 }
 
 func (c *conn) disconnect() ipc.Response {
@@ -86,8 +98,9 @@ func gracefulstop(p *os.Process, done chan struct{}) {
 }
 
 func (c *conn) connect(srv subscription.Server, url string, idx int, mode string) ipc.Response {
-	if !isxrayjson(srv.Raw) {
-		return ipc.Response{Error: "this server has no full config to connect with yet"}
+	cfg, err := buildxray(srv.Raw)
+	if err != nil {
+		return ipc.Response{Error: "this server's protocol isn't supported yet: " + err.Error()}
 	}
 	xpath, err := xray.Ensure()
 	if err != nil {
@@ -97,7 +110,7 @@ func (c *conn) connect(srv subscription.Server, url string, idx int, mode string
 	if err != nil {
 		return ipc.Response{Error: err.Error()}
 	}
-	if err := os.WriteFile(xcfg, []byte(srv.Raw), 0600); err != nil {
+	if err := os.WriteFile(xcfg, []byte(cfg), 0600); err != nil {
 		return ipc.Response{Error: err.Error()}
 	}
 
@@ -120,7 +133,7 @@ func (c *conn) connect(srv subscription.Server, url string, idx int, mode string
 		if err != nil {
 			return ipc.Response{Error: err.Error()}
 		}
-		if err := os.WriteFile(tuncfg, []byte(singbox.Config(singbox.SocksPort(srv.Raw))), 0600); err != nil {
+		if err := os.WriteFile(tuncfg, []byte(singbox.Config(singbox.SocksPort(cfg))), 0600); err != nil {
 			return ipc.Response{Error: err.Error()}
 		}
 		procs = append(procs, proc{
