@@ -14,3 +14,7 @@ func detachattr() *syscall.SysProcAttr {
 func terminate(p *os.Process) error {
 	return p.Signal(syscall.SIGTERM)
 }
+
+func iselevated() bool {
+	return os.Geteuid() == 0
+}

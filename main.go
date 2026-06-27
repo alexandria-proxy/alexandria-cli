@@ -46,7 +46,7 @@ func main() {
 		return
 	}
 
-	if *daemonmode {
+	if *daemonmode || os.Getenv("ALEXANDRIA_DAEMON") == "1" {
 		if err := daemon.Run(); err != nil {
 			fmt.Fprintln(os.Stderr, "daemon:", err)
 			os.Exit(1)

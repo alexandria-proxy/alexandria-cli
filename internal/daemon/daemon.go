@@ -42,6 +42,8 @@ func (s *state) findserver(url string, idx int) (subscription.Server, bool) {
 }
 
 func Run() error {
+	setprocname("alexad")
+
 	path, err := ipc.SocketPath()
 	if err != nil {
 		return err
@@ -259,8 +261,8 @@ func Ensure() error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(exe, "--daemon")
-	cmd.Args[0] = "alexad"
+	cmd := exec.Command(exe)
+	cmd.Env = append(os.Environ(), "ALEXANDRIA_DAEMON=1")
 	cmd.SysProcAttr = detachattr()
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
 	if err := cmd.Start(); err != nil {

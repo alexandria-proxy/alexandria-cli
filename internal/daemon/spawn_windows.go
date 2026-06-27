@@ -23,3 +23,7 @@ func detachattr() *syscall.SysProcAttr {
 func terminate(p *os.Process) error {
 	return p.Kill()
 }
+
+func iselevated() bool {
+	return false
+}

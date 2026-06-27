@@ -4,6 +4,7 @@ type Strings struct {
 	ChooseLanguage string
 	Hint           string
 	Connect        string
+	Connecting     string
 	Disconnect     string
 
 	ServersTitle string
@@ -48,6 +49,7 @@ var table = map[string]Strings{
 		ChooseLanguage: "Choose language",
 		Hint:           "↑/↓ move • enter select • q quit",
 		Connect:        "Connect",
+		Connecting:     "Connecting…",
 		Disconnect:     "Disconnect",
 		ServersTitle:   "Servers",
 		SearchHint:     "Type here to search",
@@ -89,6 +91,7 @@ var table = map[string]Strings{
 		ChooseLanguage: "Выберите язык",
 		Hint:           "↑/↓ выбор • enter выбрать • q выход",
 		Connect:        "Подключиться",
+		Connecting:     "Подключение…",
 		Disconnect:     "Отключиться",
 
 		ServersTitle: "Серверы",
@@ -131,6 +134,7 @@ var table = map[string]Strings{
 		ChooseLanguage: "زبان را انتخاب کنید",
 		Hint:           "↑/↓ حرکت • enter انتخاب • q خروج",
 		Connect:        "اتصال",
+		Connecting:     "در حال اتصال…",
 		Disconnect:     "قطع اتصال",
 
 		ServersTitle: "سرورها",

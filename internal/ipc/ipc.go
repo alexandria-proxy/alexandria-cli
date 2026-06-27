@@ -10,7 +10,7 @@ import (
 	"github.com/alexandria-proxy/alexandria-cli/internal/subscription"
 )
 
-const ProtocolVersion = 4
+const ProtocolVersion = 6
 
 type Request struct {
 	Cmd    string `json:"cmd"`

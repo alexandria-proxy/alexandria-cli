@@ -23,6 +23,10 @@ const (
 	revealedge       = 0.22
 	revealpeak       = 0.85
 
+	shimmeredge = 0.38
+	shimmerpeak = 0.7
+	connectwave = 1100
+
 	idletick = 80 * time.Millisecond
 	busymin  = time.Second
 	flashdur = 2 * time.Second
@@ -287,7 +291,7 @@ func (m Menu) Init() tea.Cmd {
 func (m Menu) tick() tea.Cmd {
 	d := idletick
 	switch {
-	case m.revealing || m.actionrunning:
+	case m.revealing || m.actionrunning || m.connecting:
 		d = revealtick
 	case m.connected:
 		d = time.Second
@@ -296,7 +300,7 @@ func (m Menu) tick() tea.Cmd {
 }
 
 func (m Menu) animating() bool {
-	return m.revealing || m.connected ||
+	return m.revealing || m.connected || m.connecting ||
 		m.focus == focussearch || m.mode == modeadd ||
 		(m.editordrag && m.editordragdir != 0) ||
 		m.actionrunning || m.flashlevel() > 0
@@ -699,7 +703,14 @@ func (m Menu) View() string {
 
 	onconnect := m.focus == focusconnect && m.mode == modelist
 	var btn string
-	if m.connected {
+	switch {
+	case m.connecting && !m.connected:
+		cb := connectbtn
+		if !onconnect {
+			cb = connectbtnblur
+		}
+		btn = cb.Render(m.tr.Connecting)
+	case m.connected:
 		db := disconnectbtn
 		if !onconnect {
 			db = disconnectbtnblur
@@ -709,7 +720,7 @@ func (m Menu) View() string {
 			db.Render(m.tr.Disconnect),
 			timerstyle.Render("⏱"+elapsed(time.Since(m.since))),
 		)
-	} else {
+	default:
 		cb := connectbtn
 		if !onconnect {
 			cb = connectbtnblur
@@ -1203,6 +1214,9 @@ func (m Menu) renderlogo() string {
 	if m.connected && !m.revealing {
 		return m.colorlogo
 	}
+	if m.connecting && !m.revealing {
+		return m.shimmerlogo()
+	}
 
 	wf, hf := float64(m.logow), float64(len(m.colorcells))
 	phase := m.phase()
@@ -1224,6 +1238,37 @@ func (m Menu) renderlogo() string {
 				}
 			} else if !m.connected && r < len(m.monocells) && c < len(m.monocells[r]) {
 				cl = m.monocells[r][c]
+			}
+			writesgr(&b, cl.fg, cl.bg, cl.reverse)
+			b.WriteRune(cl.ch)
+		}
+		b.WriteString("\x1b[0m")
+		if r < len(m.colorcells)-1 {
+			b.WriteByte('\n')
+		}
+	}
+	return b.String()
+}
+
+func (m Menu) shimmerlogo() string {
+	wf, hf := float64(m.logow), float64(len(m.colorcells))
+	frac := float64(time.Now().UnixMilli()%connectwave) / connectwave
+	pos := -shimmeredge + frac*(2.0+2*shimmeredge)
+
+	var b strings.Builder
+	for r := range m.colorcells {
+		for c := range m.colorcells[r] {
+			cl := m.colorcells[r][c]
+			if r < len(m.monocells) && c < len(m.monocells[r]) {
+				cl = m.monocells[r][c]
+			}
+			d := float64(c)/wf + float64(r)/hf - pos
+			if d < 0 {
+				d = -d
+			}
+			if d < shimmeredge && lit(cl.fg, cl.bg) {
+				t := (1 - d/shimmeredge) * shimmerpeak
+				cl.fg, cl.bg = boost(cl.fg, t), boost(cl.bg, t)
 			}
 			writesgr(&b, cl.fg, cl.bg, cl.reverse)
 			b.WriteRune(cl.ch)

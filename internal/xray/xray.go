@@ -8,16 +8,19 @@ import (
 	"runtime"
 )
 
-var ErrNotFound = errors.New("xray core not found alongside alexandria")
+var (
+	ErrNotFound        = errors.New("xray core not found alongside alexandria")
+	ErrSingboxNotFound = errors.New("sing-box not found alongside alexandria")
+)
 
-// set via ldflags for distro packages that drop xray in a libexec dir (e.g. /usr/lib/alexandria)
+// set via ldflags for distro packages that drop the cores in a libexec dir (e.g. /usr/lib/alexandria)
 var libexecdir string
 
-func binname() string {
+func exename(base string) string {
 	if runtime.GOOS == "windows" {
-		return "xray.exe"
+		return base + ".exe"
 	}
-	return "xray"
+	return base
 }
 
 func bindir() (string, error) {
@@ -28,8 +31,8 @@ func bindir() (string, error) {
 	return filepath.Join(base, "alexandria", "bin"), nil
 }
 
-func Locate() string {
-	name := binname()
+func find(base string) string {
+	name := exename(base)
 	if exe, err := os.Executable(); err == nil {
 		if p := filepath.Join(filepath.Dir(exe), name); isexec(p) {
 			return p
@@ -62,9 +65,20 @@ func isexec(p string) bool {
 	return fi.Mode()&0111 != 0
 }
 
+func Locate() string { return find("xray") }
+
 func Ensure() (string, error) {
 	if p := Locate(); p != "" {
 		return p, nil
 	}
 	return "", ErrNotFound
+}
+
+func LocateSingbox() string { return find("sing-box") }
+
+func EnsureSingbox() (string, error) {
+	if p := LocateSingbox(); p != "" {
+		return p, nil
+	}
+	return "", ErrSingboxNotFound
 }

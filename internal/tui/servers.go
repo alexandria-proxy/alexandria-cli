@@ -365,15 +365,18 @@ func busyphase() float64 {
 	return float64(time.Now().UnixMilli()%cyc) / cyc
 }
 
-func shimmershade(t float64) lipgloss.Color {
-	if t < 0 {
-		t = 0
+func writegray(b *strings.Builder, v int, italic bool) {
+	b.WriteString("\x1b[0")
+	if italic {
+		b.WriteString(";3")
 	}
-	if t > 1 {
-		t = 1
-	}
-	v := 110 + int(t*145)
-	return lipgloss.Color(fmt.Sprintf("#%02x%02x%02x", v, v, v))
+	b.WriteString(";38;2;")
+	writeint(b, v)
+	b.WriteByte(';')
+	writeint(b, v)
+	b.WriteByte(';')
+	writeint(b, v)
+	b.WriteByte('m')
 }
 
 func busycard(lines []string, italics []bool, usable int, phase float64) string {
@@ -383,34 +386,48 @@ func busycard(lines []string, italics []bool, usable int, phase float64) string 
 	}
 	width := usable
 	pos := phase * float64(width)
-	colat := func(c int) lipgloss.Style {
+	shadeval := func(c int) int {
 		d := math.Abs(float64(c) - pos)
 		if half := float64(width) / 2; d > half {
 			d = float64(width) - d
 		}
-		return lipgloss.NewStyle().Foreground(shimmershade(1 - d/5.0))
-	}
-	paint := func(s string, start int, italic bool) string {
-		var b strings.Builder
-		c := start
-		for _, r := range s {
-			st := colat(c)
-			if italic {
-				st = st.Italic(true)
-			}
-			b.WriteString(st.Render(string(r)))
-			c += lipgloss.Width(string(r))
+		t := 1 - d/5.0
+		if t < 0 {
+			t = 0
 		}
-		return b.String()
+		if t > 1 {
+			t = 1
+		}
+		return 110 + int(t*145)
 	}
 
-	rows := []string{paint("╭"+strings.Repeat("─", width-2)+"╮", 0, false)}
-	for i, ln := range lines {
-		inner := " " + padline(ansi.Strip(ln), bodyw) + " "
-		rows = append(rows, paint("│", 0, false)+paint(inner, 1, italics[i])+paint("│", width-1, false))
+	var b strings.Builder
+	b.Grow(width * (len(lines) + 2) * 24)
+
+	paint := func(s string, start int, italic bool) {
+		c := start
+		for _, r := range s {
+			writegray(&b, shadeval(c), italic)
+			b.WriteRune(r)
+			if r < 0x80 {
+				c++
+			} else {
+				c += lipgloss.Width(string(r))
+			}
+		}
 	}
-	rows = append(rows, paint("╰"+strings.Repeat("─", width-2)+"╯", 0, false))
-	return strings.Join(rows, "\n")
+
+	paint("╭"+strings.Repeat("─", width-2)+"╮", 0, false)
+	for i, ln := range lines {
+		b.WriteString("\x1b[0m\n")
+		paint("│", 0, false)
+		paint(" "+padline(ansi.Strip(ln), bodyw)+" ", 1, i < len(italics) && italics[i])
+		paint("│", width-1, false)
+	}
+	b.WriteString("\x1b[0m\n")
+	paint("╰"+strings.Repeat("─", width-2)+"╯", 0, false)
+	b.WriteString("\x1b[0m")
+	return b.String()
 }
 
 func spread(left, right string, w int) string {
