@@ -44,6 +44,10 @@ var (
 	disconnectbtnblur = lipgloss.NewStyle().Bold(true).Padding(0, 1).Background(lipgloss.Color("#9C7A7E")).Foreground(lipgloss.Color("237"))
 	timerstyle        = lipgloss.NewStyle().Bold(true).PaddingLeft(2).Foreground(btngray)
 
+	modebtnsel = lipgloss.NewStyle().Bold(true).Padding(0, 1).Background(btngray).Foreground(lipgloss.Color("16"))
+	modebtnon  = lipgloss.NewStyle().Bold(true).Padding(0, 1).Background(lipgloss.Color("237")).Foreground(lipgloss.Color("252"))
+	modebtnoff = lipgloss.NewStyle().Padding(0, 1).Foreground(lipgloss.Color("241"))
+
 	actionrow    = lipgloss.NewStyle().Padding(0, 1).Foreground(lipgloss.Color("250"))
 	actionrowsel = lipgloss.NewStyle().Bold(true).Padding(0, 1).Background(btngray).Foreground(lipgloss.Color("16"))
 	actiondanger = lipgloss.NewStyle().Bold(true).Padding(0, 1).Background(lipgloss.Color("#E0A6AC")).Foreground(lipgloss.Color("16"))
@@ -53,6 +57,7 @@ type focuszone int
 
 const (
 	focusconnect focuszone = iota
+	focusmode
 	focussearch
 	focusservers
 )
@@ -166,6 +171,50 @@ func loadsubscmd() tea.Msg {
 	return subsloadedmsg{subs: resp.Subscriptions}
 }
 
+type connectresultmsg struct {
+	connected bool
+	err       string
+}
+
+type statusmsg struct {
+	connected bool
+	mode      string
+}
+
+func connectcmd(url string, idx int, mode string) tea.Cmd {
+	return func() tea.Msg {
+		if err := daemon.Ensure(); err != nil {
+			return connectresultmsg{err: err.Error()}
+		}
+		resp, err := ipc.Send(ipc.Request{Cmd: "connect", URL: url, SrvIdx: idx, Mode: mode})
+		if err != nil {
+			return connectresultmsg{err: err.Error()}
+		}
+		if !resp.OK {
+			return connectresultmsg{err: resp.Error}
+		}
+		return connectresultmsg{connected: resp.Connected}
+	}
+}
+
+func disconnectcmd() tea.Cmd {
+	return func() tea.Msg {
+		resp, err := ipc.Send(ipc.Request{Cmd: "disconnect"})
+		if err != nil {
+			return connectresultmsg{err: err.Error()}
+		}
+		return connectresultmsg{connected: resp.Connected}
+	}
+}
+
+func statuscmd() tea.Msg {
+	resp, err := ipc.Send(ipc.Request{Cmd: "status"})
+	if err != nil || !resp.OK {
+		return statusmsg{}
+	}
+	return statusmsg{connected: resp.Connected, mode: resp.Mode}
+}
+
 func addsubcmd(url string) tea.Cmd {
 	return func() tea.Msg {
 		if err := daemon.Ensure(); err != nil {
@@ -223,16 +272,22 @@ type Menu struct {
 	actionconfirm bool
 	actionstart   time.Time
 	actionmsg     string
+
+	connmode   string
+	connecting bool
+	connerr    string
 }
 
 func NewMenu(lang, mono, color string) Menu {
 	monocells, w := parselogo(mono)
 	colorcells, _ := parselogo(color)
 	tr := i18n.T(lang)
-	return Menu{tr: tr, monocells: monocells, colorcells: colorcells, logow: w, panel: newserverspanel(tr), ticking: true}
+	return Menu{tr: tr, monocells: monocells, colorcells: colorcells, logow: w, panel: newserverspanel(tr), ticking: true, connmode: "proxy"}
 }
 
-func (m Menu) Init() tea.Cmd { return tea.Batch(tea.HideCursor, m.tick(), loadsubscmd) }
+func (m Menu) Init() tea.Cmd {
+	return tea.Batch(tea.HideCursor, m.tick(), loadsubscmd, statuscmd)
+}
 
 func (m Menu) tick() tea.Cmd {
 	d := idletick
@@ -323,6 +378,29 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		faked := m.actionbusy == actupdate || m.actionbusy == actping
 		if !faked || time.Since(m.actionstart) >= busymin {
 			m.finishaction()
+		}
+		return m.withtick(nil)
+	case connectresultmsg:
+		m.connecting = false
+		if msg.err != "" {
+			m.connerr = msg.err
+			return m.withtick(nil)
+		}
+		m.connerr = ""
+		if msg.connected != m.connected {
+			m.animconnect(msg.connected)
+		}
+		return m.withtick(nil)
+	case statusmsg:
+		if msg.mode != "" {
+			m.connmode = msg.mode
+		}
+		if msg.connected && !m.connected && !m.connecting {
+			m.connected = true
+			m.revealing = false
+			m.reverse = false
+			m.since = time.Now()
+			m.ringat = time.Now()
 		}
 		return m.withtick(nil)
 	case tea.WindowSizeMsg:
@@ -497,10 +575,41 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+		if m.focus == focusmode {
+			switch msg.String() {
+			case "ctrl+c", "q":
+				return m, tea.Quit
+			case "esc", "up":
+				m.focus = focusconnect
+				return m.withtick(nil)
+			case "left", "h":
+				m.connmode = "proxy"
+				return m, nil
+			case "right", "l":
+				m.connmode = "tun"
+				return m, nil
+			case "enter", " ":
+				if m.connmode == "proxy" {
+					m.connmode = "tun"
+				} else {
+					m.connmode = "proxy"
+				}
+				return m, nil
+			case "tab", "down":
+				if m.panel.itemcount() > 0 {
+					m.focus = focusservers
+					m.panel.serversfocused = true
+					m.panel.cursor = 0
+					m.panel.btnidx = -1
+				}
+				return m.withtick(nil)
+			}
+			return m, nil
+		}
 		switch msg.String() {
 		case "ctrl+c", "q", "esc":
 			return m, tea.Quit
-		case "right", "tab", "down":
+		case "right", "tab":
 			if m.panel.itemcount() > 0 {
 				m.focus = focusservers
 				m.panel.serversfocused = true
@@ -512,35 +621,71 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.panel.search.focusend()
 			}
 			return m.withtick(nil)
-		case "enter", " ":
-			p := m.phase()
-			rnow, ron := m.ring()
-			m.connected = !m.connected
-			m.reverse = !m.connected
-			m.revealing = true
-			if m.reverse {
-				m.frame = int(p / 2.0 * float64(revealframesback)) // resume from current coverage
-			} else {
-				m.frame = int((2.0 - p) / 2.0 * float64(revealframes))
-			}
-			m.ringat = time.Time{}
-			if m.connected {
-				m.since = time.Now()
-				m.retracting = false
-			} else {
-				m.retracting = ron
-				m.ringfrom = rnow
-				m.retractat = time.Now()
-				if rnow/ringmax > 0.4 {
-					m.ringto = ringmax + ringwidth
-				} else {
-					m.ringto = 0
-				}
-			}
+		case "down":
+			m.focus = focusmode
 			return m.withtick(nil)
+		case "enter", " ":
+			if m.connecting {
+				return m, nil
+			}
+			if m.connected {
+				m.connecting = true
+				return m.withtick(disconnectcmd())
+			}
+			url, idx, ok := m.connserver()
+			if !ok {
+				m.connerr = m.tr.NoServerToConnect
+				return m, nil
+			}
+			m.connecting = true
+			m.connerr = ""
+			return m.withtick(connectcmd(url, idx, m.connmode))
 		}
 	}
 	return m, nil
+}
+
+func (m Menu) connserver() (string, int, bool) {
+	items := m.panel.items()
+	if m.panel.cursor >= 0 && m.panel.cursor < len(items) {
+		it := items[m.panel.cursor]
+		if it.srvidx >= 0 {
+			return m.panel.subs[it.subidx].URL, it.srvidx, true
+		}
+	}
+	for _, sub := range m.panel.subs {
+		if len(sub.Servers) > 0 {
+			return sub.URL, 0, true
+		}
+	}
+	return "", -1, false
+}
+
+func (m *Menu) animconnect(target bool) {
+	p := m.phase()
+	rnow, ron := m.ring()
+	m.connected = target
+	m.reverse = !m.connected
+	m.revealing = true
+	if m.reverse {
+		m.frame = int(p / 2.0 * float64(revealframesback))
+	} else {
+		m.frame = int((2.0 - p) / 2.0 * float64(revealframes))
+	}
+	m.ringat = time.Time{}
+	if m.connected {
+		m.since = time.Now()
+		m.retracting = false
+	} else {
+		m.retracting = ron
+		m.ringfrom = rnow
+		m.retractat = time.Now()
+		if rnow/ringmax > 0.4 {
+			m.ringto = ringmax + ringwidth
+		} else {
+			m.ringto = 0
+		}
+	}
 }
 
 func (m Menu) View() string {
@@ -570,7 +715,10 @@ func (m Menu) View() string {
 		btn = cb.Render(m.tr.Connect)
 	}
 
-	unit := lipgloss.JoinVertical(lipgloss.Center, logo, "", btn)
+	unit := lipgloss.JoinVertical(lipgloss.Center, logo, "", btn, "", m.rendermode())
+	if m.connerr != "" {
+		unit = lipgloss.JoinVertical(lipgloss.Center, unit, "", errstyle.Render(m.connerr))
+	}
 	if m.width == 0 || m.height == 0 {
 		return unit
 	}
@@ -1015,6 +1163,21 @@ func (m Menu) searchwidth() int {
 		cw = 1
 	}
 	return cw
+}
+
+func (m Menu) rendermode() string {
+	focused := m.focus == focusmode && m.mode == modelist
+	pill := func(label, mode string) string {
+		switch {
+		case m.connmode == mode && focused:
+			return modebtnsel.Render(label)
+		case m.connmode == mode:
+			return modebtnon.Render(label)
+		default:
+			return modebtnoff.Render(label)
+		}
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Center, pill("proxy", "proxy"), "  ", pill("tun", "tun"))
 }
 
 func (m Menu) renderlogo() string {

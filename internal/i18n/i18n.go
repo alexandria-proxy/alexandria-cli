@@ -31,18 +31,19 @@ type Strings struct {
 	EditHint        string
 	SaveBtn         string
 
-	ActionsTitle   string
-	ActionUpdate   string
-	ActionTestPing string
-	ActionPin      string
-	ActionUnpin    string
-	ActionCopyURL  string
-	ActionEdit     string
-	ActionRemove   string
-	Updating       string
-	Pinging        string
-	Copied         string
-	Dead           string
+	ActionsTitle      string
+	ActionUpdate      string
+	ActionTestPing    string
+	ActionPin         string
+	ActionUnpin       string
+	ActionCopyURL     string
+	ActionEdit        string
+	ActionRemove      string
+	Updating          string
+	Pinging           string
+	Copied            string
+	Dead              string
+	NoServerToConnect string
 }
 
 var table = map[string]Strings{
@@ -76,18 +77,19 @@ var table = map[string]Strings{
 		EditHint:        "A wrong config will break the connection. Edit only if you know what you're doing.",
 		SaveBtn:         "Save",
 
-		ActionsTitle:   "actions",
-		ActionUpdate:   "update",
-		ActionTestPing: "ping",
-		ActionPin:      "pin",
-		ActionUnpin:    "unpin",
-		ActionCopyURL:  "copy url",
-		ActionEdit:     "edit",
-		ActionRemove:   "remove",
-		Updating:       "updating…",
-		Pinging:        "pinging…",
-		Copied:         "copied!",
-		Dead:           "dead",
+		ActionsTitle:      "actions",
+		ActionUpdate:      "update",
+		ActionTestPing:    "ping",
+		ActionPin:         "pin",
+		ActionUnpin:       "unpin",
+		ActionCopyURL:     "copy url",
+		ActionEdit:        "edit",
+		ActionRemove:      "remove",
+		Updating:          "updating…",
+		Pinging:           "pinging…",
+		Copied:            "copied!",
+		Dead:              "dead",
+		NoServerToConnect: "no server to connect",
 	},
 	"ru": {
 		ChooseLanguage: "Выберите язык",
@@ -120,18 +122,19 @@ var table = map[string]Strings{
 		EditHint:        "Неверный конфиг порвёт соединение. Редактируйте только если знаете что делаете.",
 		SaveBtn:         "Сохранить",
 
-		ActionsTitle:   "действия",
-		ActionUpdate:   "обновить",
-		ActionTestPing: "пинг",
-		ActionPin:      "закрепить",
-		ActionUnpin:    "открепить",
-		ActionCopyURL:  "копировать url",
-		ActionEdit:     "изменить",
-		ActionRemove:   "удалить",
-		Updating:       "обновление…",
-		Pinging:        "проверка пинга…",
-		Copied:         "скопировано!",
-		Dead:           "dead",
+		ActionsTitle:      "действия",
+		ActionUpdate:      "обновить",
+		ActionTestPing:    "пинг",
+		ActionPin:         "закрепить",
+		ActionUnpin:       "открепить",
+		ActionCopyURL:     "копировать url",
+		ActionEdit:        "изменить",
+		ActionRemove:      "удалить",
+		Updating:          "обновление…",
+		Pinging:           "проверка пинга…",
+		Copied:            "скопировано!",
+		Dead:              "dead",
+		NoServerToConnect: "нет сервера для подключения",
 	},
 	"fa": {
 		ChooseLanguage: "زبان را انتخاب کنید",
@@ -164,18 +167,19 @@ var table = map[string]Strings{
 		EditHint:        "پیکربندی نادرست اتصال را قطع می‌کند. فقط اگر می‌دانید چه می‌کنید ویرایش کنید.",
 		SaveBtn:         "ذخیره",
 
-		ActionsTitle:   "عملیات",
-		ActionUpdate:   "بروزرسانی",
-		ActionTestPing: "پینگ",
-		ActionPin:      "سنجاق",
-		ActionUnpin:    "برداشتن سنجاق",
-		ActionCopyURL:  "کپی آدرس",
-		ActionEdit:     "ویرایش",
-		ActionRemove:   "حذف",
-		Updating:       "در حال بروزرسانی…",
-		Pinging:        "در حال پینگ…",
-		Copied:         "کپی شد!",
-		Dead:           "dead",
+		ActionsTitle:      "عملیات",
+		ActionUpdate:      "بروزرسانی",
+		ActionTestPing:    "پینگ",
+		ActionPin:         "سنجاق",
+		ActionUnpin:       "برداشتن سنجاق",
+		ActionCopyURL:     "کپی آدرس",
+		ActionEdit:        "ویرایش",
+		ActionRemove:      "حذف",
+		Updating:          "در حال بروزرسانی…",
+		Pinging:           "در حال پینگ…",
+		Copied:            "کپی شد!",
+		Dead:              "dead",
+		NoServerToConnect: "سروری برای اتصال نیست",
 	},
 }
 

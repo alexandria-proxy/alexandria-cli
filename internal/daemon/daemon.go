@@ -21,6 +21,18 @@ import (
 type state struct {
 	mu   sync.Mutex
 	subs []subscription.Subscription
+	conn conn
+}
+
+func (s *state) findserver(url string, idx int) (subscription.Server, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.subs {
+		if s.subs[i].URL == url && idx >= 0 && idx < len(s.subs[i].Servers) {
+			return s.subs[i].Servers[idx], true
+		}
+	}
+	return subscription.Server{}, false
 }
 
 func Run() error {
@@ -49,6 +61,7 @@ func Run() error {
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
 
+	s.conn.stopnow()
 	_ = os.Remove(pid)
 	_ = os.Remove(path)
 	return nil
@@ -97,6 +110,19 @@ func (s *state) handle(req ipc.Request) ipc.Response {
 			return ipc.Response{Error: err.Error()}
 		}
 		return ipc.Response{OK: true, Path: path}
+
+	case "connect":
+		srv, ok := s.findserver(req.URL, req.SrvIdx)
+		if !ok {
+			return ipc.Response{Error: "server not found"}
+		}
+		return s.conn.connect(srv, req.URL, req.SrvIdx, req.Mode)
+
+	case "disconnect":
+		return s.conn.disconnect()
+
+	case "status":
+		return s.conn.status()
 
 	case "add_subscription":
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

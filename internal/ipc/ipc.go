@@ -10,13 +10,14 @@ import (
 	"github.com/alexandria-proxy/alexandria-cli/internal/subscription"
 )
 
-const ProtocolVersion = 2
+const ProtocolVersion = 3
 
 type Request struct {
 	Cmd    string `json:"cmd"`
 	URL    string `json:"url,omitempty"`
 	SrvIdx int    `json:"srv_idx,omitempty"`
 	Raw    string `json:"raw,omitempty"`
+	Mode   string `json:"mode,omitempty"`
 }
 
 type Response struct {
@@ -24,6 +25,9 @@ type Response struct {
 	Error         string                      `json:"error,omitempty"`
 	Path          string                      `json:"path,omitempty"`
 	Version       int                         `json:"version,omitempty"`
+	Connected     bool                        `json:"connected,omitempty"`
+	Mode          string                      `json:"mode,omitempty"`
+	Active        string                      `json:"active,omitempty"`
 	Subscriptions []subscription.Subscription `json:"subscriptions,omitempty"`
 }
 
