@@ -31,6 +31,7 @@ func Run() error {
 	}
 
 	subs, _ := subscription.Load()
+	subscription.Sort(subs)
 	s := &state{subs: subs}
 
 	ln, err := ipc.Listen(path, s.handle)
@@ -78,13 +79,76 @@ func (s *state) handle(req ipc.Request) ipc.Response {
 		replaced := false
 		for i := range s.subs {
 			if s.subs[i].URL == sub.URL {
-				s.subs[i] = sub
+				s.subs[i] = subscription.Merge(s.subs[i], sub)
 				replaced = true
 				break
 			}
 		}
 		if !replaced {
 			s.subs = append(s.subs, sub)
+		}
+		subscription.Sort(s.subs)
+		snapshot := append([]subscription.Subscription(nil), s.subs...)
+		s.mu.Unlock()
+
+		_ = subscription.SaveAll(snapshot)
+		return ipc.Response{OK: true, Subscriptions: snapshot}
+
+	case "remove_subscription":
+		s.mu.Lock()
+		out := s.subs[:0]
+		for _, sub := range s.subs {
+			if sub.URL != req.URL {
+				out = append(out, sub)
+			}
+		}
+		s.subs = out
+		snapshot := append([]subscription.Subscription(nil), s.subs...)
+		s.mu.Unlock()
+
+		_ = subscription.SaveAll(snapshot)
+		return ipc.Response{OK: true, Subscriptions: snapshot}
+
+	case "toggle_pin":
+		s.mu.Lock()
+		for i := range s.subs {
+			if s.subs[i].URL == req.URL {
+				s.subs[i].Pinned = !s.subs[i].Pinned
+				break
+			}
+		}
+		subscription.Sort(s.subs)
+		snapshot := append([]subscription.Subscription(nil), s.subs...)
+		s.mu.Unlock()
+
+		_ = subscription.SaveAll(snapshot)
+		return ipc.Response{OK: true, Subscriptions: snapshot}
+
+	case "ping_subscription":
+		s.mu.Lock()
+		var servers []subscription.Server
+		for i := range s.subs {
+			if s.subs[i].URL == req.URL {
+				servers = append([]subscription.Server(nil), s.subs[i].Servers...)
+				break
+			}
+		}
+		s.mu.Unlock()
+		if servers == nil {
+			return ipc.Response{Error: "subscription not found"}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		probe := subscription.Subscription{Servers: servers}
+		subscription.Ping(ctx, &probe)
+		cancel()
+
+		s.mu.Lock()
+		for i := range s.subs {
+			if s.subs[i].URL == req.URL {
+				s.subs[i].Servers = probe.Servers
+				break
+			}
 		}
 		snapshot := append([]subscription.Subscription(nil), s.subs...)
 		s.mu.Unlock()

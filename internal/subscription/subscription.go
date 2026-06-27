@@ -5,12 +5,15 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 )
@@ -38,6 +41,7 @@ type Subscription struct {
 	TotalBytes int64         `json:"total_bytes"`
 	Expires    time.Time     `json:"expires"`
 	Note       string        `json:"note"`
+	Pinned     bool          `json:"pinned,omitempty"`
 	Servers    []Server      `json:"servers"`
 }
 
@@ -337,6 +341,63 @@ func anyint(v any) int {
 	return 0
 }
 
+func Sort(subs []Subscription) {
+	sort.SliceStable(subs, func(i, j int) bool {
+		return subs[i].Pinned && !subs[j].Pinned
+	})
+}
+
+func Merge(prev, cur Subscription) Subscription {
+	cur.Pinned = prev.Pinned
+	pings := make(map[string]int, len(prev.Servers))
+	for _, s := range prev.Servers {
+		if s.PingMs != 0 {
+			pings[s.Raw] = s.PingMs
+		}
+	}
+	for i := range cur.Servers {
+		if cur.Servers[i].PingMs == 0 {
+			if p, ok := pings[cur.Servers[i].Raw]; ok {
+				cur.Servers[i].PingMs = p
+			}
+		}
+	}
+	return cur
+}
+
+func Ping(ctx context.Context, sub *Subscription) {
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 8)
+	for i := range sub.Servers {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			sub.Servers[i].PingMs = pingone(ctx, sub.Servers[i].Host, sub.Servers[i].Port)
+		}(i)
+	}
+	wg.Wait()
+}
+
+func pingone(ctx context.Context, host string, port int) int {
+	if host == "" || port == 0 {
+		return -1
+	}
+	d := net.Dialer{Timeout: 3 * time.Second}
+	start := time.Now()
+	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(host, strconv.Itoa(port)))
+	if err != nil {
+		return -1
+	}
+	conn.Close()
+	ms := int(time.Since(start).Milliseconds())
+	if ms < 1 {
+		ms = 1
+	}
+	return ms
+}
+
 func dir() (string, error) {
 	base, err := os.UserConfigDir()
 	if err != nil {
@@ -391,7 +452,7 @@ func SaveAll(subs []Subscription) error {
 	return atomicwrite(p, data, 0600)
 }
 
-// atomicwrite lands data 
+// atomicwrite lands data
 func atomicwrite(path string, data []byte, perm os.FileMode) error {
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".subs-*.tmp")
 	if err != nil {
