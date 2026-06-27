@@ -430,7 +430,7 @@ func (p serverspanel) subcard(s subscription.Subscription, usable int, selected,
 	lines := []string{name, meta, usage}
 	italics := []bool{false, false, false}
 	if s.Note != "" {
-		lines = append(lines, panelfaint.Italic(true).Width(bodyw).Align(lipgloss.Center).Render(cliprunes(s.Note, bodyw)))
+		lines = append(lines, panelfaint.Italic(true).Width(bodyw).Align(lipgloss.Center).Render(cliprunes(oneline(s.Note), bodyw)))
 		italics = append(italics, true)
 	}
 	if busy {
@@ -615,13 +615,17 @@ func busycard(lines []string, italics []bool, usable int, phase float64) string 
 	for i, ln := range lines {
 		b.WriteString("\x1b[0m\n")
 		paint("│", 0, false)
-		paint(" "+padline(cliprunes(ansi.Strip(ln), bodyw), bodyw)+" ", 1, i < len(italics) && italics[i])
+		paint(" "+padline(ansi.Truncate(ansi.Strip(ln), bodyw, ""), bodyw)+" ", 1, i < len(italics) && italics[i])
 		paint("│", width-1, false)
 	}
 	b.WriteString("\x1b[0m\n")
 	paint("╰"+strings.Repeat("─", width-2)+"╯", 0, false)
 	b.WriteString("\x1b[0m")
 	return b.String()
+}
+
+func oneline(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }
 
 func spread(left, right string, w int) string {
