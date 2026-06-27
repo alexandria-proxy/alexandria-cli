@@ -62,7 +62,7 @@ fi
 
 mkdir -p "$APP_DIR" "$BIN_DIR"
 tar -xzf "$tmp/$archive" -C "$APP_DIR"
-chmod +x "$APP_DIR/alexandria-cli" "$APP_DIR/xray" 2>/dev/null || true
+chmod +x "$APP_DIR/alexandria-cli" "$APP_DIR/xray" "$APP_DIR/sing-box" 2>/dev/null || true
 ln -sf "$APP_DIR/alexandria-cli" "$BIN_DIR/alexandria-cli"
 
 echo "installed alexandria-cli to $APP_DIR"

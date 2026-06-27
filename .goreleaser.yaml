@@ -38,12 +38,33 @@ archives:
     files:
       - src: ".cores/{{ .Os }}-{{ .Arch }}/*"
         dst: "."
+      - LICENSE
+      - README.md
 
 checksum:
   name_template: "checksums.txt"
 
 snapshot:
   version_template: "{{ incpatch .Version }}-snapshot"
+
+aurs:
+  - name: alexandria-cli
+    homepage: "https://github.com/alexandria-proxy/alexandria-cli"
+    description: "A lightweight, censorship-resistant Xray-core client for your terminal"
+    license: "MPL-2.0"
+    maintainers:
+      - "duke <duke@jumpout.org>"
+    private_key: "{{ .Env.AUR_KEY }}"
+    git_url: "ssh://aur@aur.archlinux.org/alexandria-cli.git"
+    package: |-
+      install -Dm755 "./alexandria-cli" "${pkgdir}/usr/lib/alexandria/alexandria-cli"
+      install -Dm755 "./xray" "${pkgdir}/usr/lib/alexandria/xray"
+      install -Dm755 "./sing-box" "${pkgdir}/usr/lib/alexandria/sing-box"
+      install -Dm644 "./geoip.dat" "${pkgdir}/usr/lib/alexandria/geoip.dat"
+      install -Dm644 "./geosite.dat" "${pkgdir}/usr/lib/alexandria/geosite.dat"
+      install -dm755 "${pkgdir}/usr/bin"
+      ln -s /usr/lib/alexandria/alexandria-cli "${pkgdir}/usr/bin/alexandria-cli"
+      install -Dm644 "./LICENSE" "${pkgdir}/usr/share/licenses/alexandria-cli/LICENSE"
 
 release:
   github:
