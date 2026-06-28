@@ -1,11 +1,14 @@
-name: Notify Telegram on push
+name: Notify Telegram
 
 on:
   push:
     branches: ["**"]
+  release:
+    types: [released, prereleased]
 
 jobs:
   notify:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Send Telegram message
@@ -85,6 +88,54 @@ jobs:
 
           TEXT=$(printf '<b>%s</b> on <b>%s</b>\npushed by <b>%s</b> - %s commit(s)\n\n%s%s\n\n%s\n%s' \
             "$REPO" "$BRANCH" "$PUSHER" "$COUNT" "$COMMITS" "$MORE" "$FILES_HEADER" "$FILES")
+
+          curl -sS -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TG_CHAT}" \
+            --data-urlencode "text=${TEXT}" \
+            -d parse_mode=HTML \
+            -d disable_web_page_preview=true \
+            ${TG_THREAD:+--data-urlencode "message_thread_id=${TG_THREAD}"}
+
+  notify-release:
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Telegram release message
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TG_THREAD: ${{ secrets.TELEGRAM_THREAD_ID }}
+        run: |
+          set -euo pipefail
+
+          he() { sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
+
+          REPO="${GITHUB_REPOSITORY##*/}"
+          TAG=$(jq -r '.release.tag_name' "$GITHUB_EVENT_PATH")
+          NAME=$(jq -r '.release.name // .release.tag_name' "$GITHUB_EVENT_PATH")
+          URL=$(jq -r '.release.html_url' "$GITHUB_EVENT_PATH")
+          AUTHOR=$(jq -r '.release.author.login // "?"' "$GITHUB_EVENT_PATH")
+          PRE=$(jq -r '.release.prerelease' "$GITHUB_EVENT_PATH")
+
+          KIND="release"
+          ICON="🚀"
+          if [ "$PRE" = "true" ]; then
+            KIND="pre-release"
+            ICON="🧪"
+          fi
+
+          NAME_HE=$(printf '%s' "$NAME" | he)
+          TAG_HE=$(printf '%s' "$TAG" | he)
+          AUTHOR_HE=$(printf '%s' "$AUTHOR" | he)
+          BODY=$(jq -r '.release.body // ""' "$GITHUB_EVENT_PATH" | head -c 1500 | he)
+
+          EXTRA=""
+          if [ -n "$BODY" ]; then
+            EXTRA=$(printf '\n\n%s' "$BODY")
+          fi
+
+          TEXT=$(printf '%s <b>%s</b> %s <b>%s</b>\n<a href="%s">%s</a> by <b>%s</b>%s' \
+            "$ICON" "$REPO" "$KIND" "$NAME_HE" "$URL" "$TAG_HE" "$AUTHOR_HE" "$EXTRA")
 
           curl -sS -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${TG_CHAT}" \
