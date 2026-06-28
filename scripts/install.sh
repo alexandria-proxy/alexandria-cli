@@ -39,11 +39,14 @@ os="$(detect_os)"
 arch="$(detect_arch)"
 
 version="${ALEXANDRIA_VERSION:-}"
-if [ -n "$version" ]; then
-	base="https://github.com/$REPO/releases/download/v${version#v}"
-else
-	base="https://github.com/$REPO/releases/latest/download"
+if [ -z "$version" ]; then
+	version="$(curl -fsSL "https://api.github.com/repos/$REPO/releases?per_page=1" | grep -m1 '"tag_name"' | sed -E 's/.*"v?([^"]+)".*/\1/')"
 fi
+if [ -z "$version" ]; then
+	echo "could not find a release for $REPO" >&2
+	exit 1
+fi
+base="https://github.com/$REPO/releases/download/v${version#v}"
 
 archive="alexandria-$os-$arch.tar.gz"
 tmp="$(mktemp -d)"

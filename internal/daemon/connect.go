@@ -30,6 +30,7 @@ type conn struct {
 	url       string
 	srvidx    int
 	mode      string
+	since     time.Time
 	lasterr   string
 	stop      chan struct{}
 }
@@ -65,6 +66,7 @@ func (c *conn) status() ipc.Response {
 	r := ipc.Response{OK: true, Connected: c.connected, Mode: c.mode, Error: c.lasterr}
 	if c.connected {
 		r.ActiveURL, r.ActiveSrv = c.url, c.srvidx
+		r.Since = c.since.Unix()
 	}
 	return r
 }
@@ -154,6 +156,7 @@ func (c *conn) start(url string, idx int, mode string, procs []proc) ipc.Respons
 	c.mu.Lock()
 	c.connected = true
 	c.url, c.srvidx, c.mode = url, idx, mode
+	c.since = time.Now()
 	c.lasterr = ""
 	c.stop = stop
 	c.cmds = make(map[string]*exec.Cmd, len(procs))

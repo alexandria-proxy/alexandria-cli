@@ -10,11 +10,12 @@ $arch = switch ($env:PROCESSOR_ARCHITECTURE) {
 }
 
 $version = $env:ALEXANDRIA_VERSION
-if ($version) {
-	$base = "https://github.com/$Repo/releases/download/v$($version.TrimStart('v'))"
-} else {
-	$base = "https://github.com/$Repo/releases/latest/download"
+if (-not $version) {
+	$rel = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases?per_page=1"
+	$version = $rel[0].tag_name
 }
+if (-not $version) { throw "could not find a release for $Repo" }
+$base = "https://github.com/$Repo/releases/download/v$($version.TrimStart('v'))"
 
 $archive = "alexandria-windows-$arch.zip"
 $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid())

@@ -17,17 +17,48 @@ import (
 	"github.com/alexandria-proxy/alexandria-cli/internal/subscription"
 )
 
+const idletimeout = 60 * time.Second
+
 type state struct {
 	mu       sync.Mutex
 	subs     []subscription.Subscription
 	conn     conn
 	quit     chan struct{}
 	quitonce sync.Once
+	lastbeat time.Time
 }
 
 func (s *state) shutdown() {
 	time.Sleep(150 * time.Millisecond)
 	s.quitonce.Do(func() { close(s.quit) })
+}
+
+func (s *state) touch() {
+	s.mu.Lock()
+	s.lastbeat = time.Now()
+	s.mu.Unlock()
+}
+
+func (s *state) idlewatch() {
+	t := time.NewTicker(15 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-s.quit:
+			return
+		case <-t.C:
+			if s.conn.isconnected() {
+				continue
+			}
+			s.mu.Lock()
+			idle := time.Since(s.lastbeat)
+			s.mu.Unlock()
+			if idle > idletimeout {
+				s.quitonce.Do(func() { close(s.quit) })
+				return
+			}
+		}
+	}
 }
 
 func (s *state) findserver(url string, idx int) (subscription.Server, bool) {
@@ -54,13 +85,15 @@ func Run() error {
 
 	subs, _ := subscription.Load()
 	subscription.Sort(subs)
-	s := &state{subs: subs, quit: make(chan struct{})}
+	s := &state{subs: subs, quit: make(chan struct{}), lastbeat: time.Now()}
 
 	ln, err := ipc.Listen(path, s.handle)
 	if err != nil {
 		return err
 	}
 	defer ln.Close()
+
+	go s.idlewatch()
 
 	pid := pidpath()
 	_ = os.WriteFile(pid, []byte(strconv.Itoa(os.Getpid())), 0600)
@@ -105,6 +138,7 @@ func stopdaemon() {
 }
 
 func (s *state) handle(req ipc.Request) ipc.Response {
+	s.touch()
 	switch req.Cmd {
 	case "ping":
 		return ipc.Response{OK: true, Version: ipc.ProtocolVersion}

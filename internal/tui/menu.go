@@ -179,6 +179,7 @@ type statusmsg struct {
 	mode      string
 	url       string
 	idx       int
+	since     int64
 }
 
 func connectcmd(url string, idx int, mode string) tea.Cmd {
@@ -217,7 +218,18 @@ func statuscmd() tea.Msg {
 	if err != nil || !resp.OK {
 		return statusmsg{}
 	}
-	return statusmsg{connected: resp.Connected, mode: resp.Mode, url: resp.ActiveURL, idx: resp.ActiveSrv}
+	return statusmsg{connected: resp.Connected, mode: resp.Mode, url: resp.ActiveURL, idx: resp.ActiveSrv, since: resp.Since}
+}
+
+type heartbeatmsg struct{}
+
+func heartbeat() tea.Cmd {
+	return tea.Tick(20*time.Second, func(time.Time) tea.Msg { return heartbeatmsg{} })
+}
+
+func pingcmd() tea.Msg {
+	_, _ = ipc.Send(ipc.Request{Cmd: "ping"})
+	return nil
 }
 
 func addsubcmd(url string) tea.Cmd {
@@ -294,7 +306,7 @@ func NewMenu(lang, mono, color string) Menu {
 }
 
 func (m Menu) Init() tea.Cmd {
-	return tea.Batch(tea.HideCursor, m.tick(), loadsubscmd, statuscmd)
+	return tea.Batch(tea.HideCursor, m.tick(), loadsubscmd, statuscmd, heartbeat())
 }
 
 func (m Menu) tick() tea.Cmd {
@@ -377,6 +389,8 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, timertick()
+	case heartbeatmsg:
+		return m, tea.Batch(pingcmd, heartbeat())
 	case subsloadedmsg:
 		m.panel.subs = msg.subs
 		m.panel.cursor, m.panel.scroll = 0, 0
@@ -442,7 +456,11 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.connected = true
 			m.revealing = false
 			m.reverse = false
-			m.since = time.Now()
+			if msg.since > 0 {
+				m.since = time.Unix(msg.since, 0)
+			} else {
+				m.since = time.Now()
+			}
 		}
 		timer := m.starttimer()
 		model, cmd := m.withtick(nil)
