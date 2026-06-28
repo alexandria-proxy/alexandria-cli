@@ -398,9 +398,7 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case subsloadedmsg:
 		m.panel.subs = msg.subs
 		m.panel.cursor, m.panel.scroll = 0, 0
-		if m.chosenurl == "" {
-			m.defaultchosen()
-		}
+		m.ensurechosen()
 		return m, nil
 	case addresultmsg:
 		m.form.loading = false
@@ -409,6 +407,7 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.withtick(nil)
 		}
 		m.panel.subs = msg.subs
+		m.ensurechosen()
 		m.mode = modelist
 		return m, nil
 	case editsavedmsg:
@@ -417,6 +416,7 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.panel.subs = msg.subs
+		m.ensurechosen()
 		m.editerr = ""
 		m.mode = modelist
 		return m, nil
@@ -426,6 +426,7 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if n := m.panel.itemcount(); m.panel.cursor >= n {
 				m.panel.cursor = max0(n - 1)
 			}
+			m.ensurechosen()
 		} else {
 			m.pushtoast(toasterr, msg.err)
 		}
@@ -748,6 +749,15 @@ func (m *Menu) defaultchosen() {
 		}
 	}
 	m.chosenurl, m.chosenidx = "", -1
+}
+
+func (m *Menu) ensurechosen() {
+	if m.chosenurl != "" {
+		if sub, ok := m.subbyurl(m.chosenurl); ok && m.chosenidx >= 0 && m.chosenidx < len(sub.Servers) {
+			return
+		}
+	}
+	m.defaultchosen()
 }
 
 func (m Menu) chosenserver() (string, int, bool) {
