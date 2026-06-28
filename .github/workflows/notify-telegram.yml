@@ -111,7 +111,6 @@ jobs:
           he() { sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
 
           REPO="${GITHUB_REPOSITORY##*/}"
-          TAG=$(jq -r '.release.tag_name' "$GITHUB_EVENT_PATH")
           NAME=$(jq -r '.release.name // .release.tag_name' "$GITHUB_EVENT_PATH")
           URL=$(jq -r '.release.html_url' "$GITHUB_EVENT_PATH")
           AUTHOR=$(jq -r '.release.author.login // "?"' "$GITHUB_EVENT_PATH")
@@ -125,7 +124,6 @@ jobs:
           fi
 
           NAME_HE=$(printf '%s' "$NAME" | he)
-          TAG_HE=$(printf '%s' "$TAG" | he)
           AUTHOR_HE=$(printf '%s' "$AUTHOR" | he)
           BODY=$(jq -r '.release.body // ""' "$GITHUB_EVENT_PATH" | head -c 1500 | he)
 
@@ -134,12 +132,12 @@ jobs:
             EXTRA=$(printf '\n\n%s' "$BODY")
           fi
 
-          TEXT=$(printf '%s <b>%s</b> %s <b>%s</b>\n<a href="%s">%s</a> by <b>%s</b>%s' \
-            "$ICON" "$REPO" "$KIND" "$NAME_HE" "$URL" "$TAG_HE" "$AUTHOR_HE" "$EXTRA")
+          TEXT=$(printf '%s <b>%s</b> %s <a href="%s"><b>%s</b></a> by <b>%s</b>%s' \
+            "$ICON" "$REPO" "$KIND" "$URL" "$NAME_HE" "$AUTHOR_HE" "$EXTRA")
 
           curl -sS -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${TG_CHAT}" \
             --data-urlencode "text=${TEXT}" \
             -d parse_mode=HTML \
-            -d disable_web_page_preview=true \
+            -d disable_web_page_preview=false \
             ${TG_THREAD:+--data-urlencode "message_thread_id=${TG_THREAD}"}
