@@ -16,7 +16,7 @@
     <a href="https://github.com/alexandria-proxy/alexandria-cli/releases"><img src="https://img.shields.io/github/v/release/alexandria-proxy/alexandria-cli?include_prereleases&style=flat-square&color=6C7BFF" alt="Release" /></a>
     <a href="LICENSE"><img src="https://img.shields.io/github/license/alexandria-proxy/alexandria-cli?style=flat-square&color=orange" alt="License" /></a>
     <a href="#установка"><img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-blue?style=flat-square" alt="Platforms" /></a>
-    <a href="https://t.me/AlexandriaSupport"><img src="https://img.shields.io/badge/telegram-join-26A5E4?style=flat-square&logo=telegram&logoColor=white" alt="Telegram" /></a>
+    <a href="https://t.me/Alexandriavpn"><img src="https://img.shields.io/badge/telegram-join-26A5E4?style=flat-square&logo=telegram&logoColor=white" alt="Telegram" /></a>
     <a href="https://github.com/alexandria-proxy/alexandria-cli/stargazers"><img src="https://img.shields.io/github/stars/alexandria-proxy/alexandria-cli?style=flat-square&color=DAA520" alt="Stars" /></a>
 </p>
 
