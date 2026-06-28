@@ -288,9 +288,10 @@ type Menu struct {
 
 	connmode     string
 	connecting   bool
-	connerr      string
 	flashat      time.Time
 	timerticking bool
+
+	toasts []toast
 
 	chosenurl string
 	chosenidx int
@@ -333,7 +334,7 @@ func (m Menu) animating() bool {
 	return m.revealing || m.connecting ||
 		m.focus == focussearch || m.mode == modeadd ||
 		(m.editordrag && m.editordragdir != 0) ||
-		m.actionrunning || m.flashlevel() > 0
+		m.actionrunning || m.flashlevel() > 0 || m.hastoasts()
 }
 
 func (m Menu) flashlevel() float64 {
@@ -378,6 +379,9 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.actionrunning && m.actiondone && time.Since(m.actionstart) >= busymin {
 			m.finishaction()
 		}
+		if len(m.toasts) > 0 {
+			m.prunetoasts()
+		}
 		if !m.animating() {
 			m.ticking = false
 			return m, nil
@@ -401,8 +405,8 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case addresultmsg:
 		m.form.loading = false
 		if msg.err != "" {
-			m.form.err = msg.err
-			return m, nil
+			m.pushtoast(toasterr, msg.err)
+			return m.withtick(nil)
 		}
 		m.panel.subs = msg.subs
 		m.mode = modelist
@@ -422,6 +426,8 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if n := m.panel.itemcount(); m.panel.cursor >= n {
 				m.panel.cursor = max0(n - 1)
 			}
+		} else {
+			m.pushtoast(toasterr, msg.err)
 		}
 		m.actiondone = true
 		faked := m.actionbusy == actupdate || m.actionbusy == actping
@@ -432,10 +438,9 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case connectresultmsg:
 		m.connecting = false
 		if msg.err != "" {
-			m.connerr = msg.err
+			m.pushtoast(toasterr, msg.err)
 			return m.withtick(nil)
 		}
-		m.connerr = ""
 		if msg.connected {
 			m.chosenurl, m.chosenidx = m.pendurl, m.pendidx
 		}
@@ -497,7 +502,6 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case formcancel:
 				m.mode = modelist
 			case formsubmit:
-				m.form.err = ""
 				m.form.loading = true
 				return m.withtick(addsubcmd(strings.TrimSpace(m.form.url.value)))
 			}
@@ -711,7 +715,6 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.withtick(nil)
 			}
 			m.connecting = true
-			m.connerr = ""
 			m.pendurl, m.pendidx = url, idx
 			return m.withtick(connectcmd(url, idx, m.connmode))
 		}
@@ -730,7 +733,6 @@ func (m Menu) selectserver(it selitem) (tea.Model, tea.Cmd) {
 	m.chosenurl, m.chosenidx = url, it.srvidx
 	if m.connected && !m.connecting {
 		m.connecting = true
-		m.connerr = ""
 		m.pendurl, m.pendidx = url, it.srvidx
 		m.animconnect(false)
 		return m.withtick(connectcmd(url, it.srvidx, m.connmode))
@@ -810,9 +812,6 @@ func (m Menu) viewunit() (unit, logo, btn, mode string) {
 	btn = m.viewbtn()
 	mode = m.rendermode()
 	unit = lipgloss.JoinVertical(lipgloss.Center, logo, "", btn, "", mode)
-	if m.connerr != "" {
-		unit = lipgloss.JoinVertical(lipgloss.Center, unit, "", errstyle.Render(m.connerr))
-	}
 	return unit, logo, btn, mode
 }
 
@@ -918,7 +917,6 @@ func (m Menu) clickconnect() (tea.Model, tea.Cmd) {
 		return m.withtick(nil)
 	}
 	m.connecting = true
-	m.connerr = ""
 	m.pendurl, m.pendidx = url, idx
 	return m.withtick(connectcmd(url, idx, m.connmode))
 }
@@ -1033,7 +1031,7 @@ func (m Menu) View() string {
 		if m.mode == modeadd {
 			content = m.form.render(m.width)
 		}
-		return lipgloss.JoinVertical(lipgloss.Left, top, content)
+		return m.withtoasts(lipgloss.JoinVertical(lipgloss.Left, top, content))
 	}
 
 	leftw := m.width / 2
@@ -1044,7 +1042,7 @@ func (m Menu) View() string {
 	}
 	left := lipgloss.Place(leftw, m.height, lipgloss.Center, lipgloss.Center, unit)
 	right := lipgloss.Place(rightw, m.height, lipgloss.Left, lipgloss.Top, rightcontent)
-	return lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+	return m.withtoasts(lipgloss.JoinHorizontal(lipgloss.Top, left, right))
 }
 
 func (m Menu) editmodalsize() (int, int) {

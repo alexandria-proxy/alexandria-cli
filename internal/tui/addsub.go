@@ -39,7 +39,6 @@ type addform struct {
 	url       textinput
 	loading   bool
 	editing   bool
-	err       string
 }
 
 func newaddform(tr i18n.Strings) addform {
@@ -122,11 +121,6 @@ func (f addform) render(width int) string {
 		labeledinput(f.tr.FieldName, f.name, f.focus == fieldname, usable), "",
 		labeledinput(f.tr.FieldURL, f.url, f.focus == fieldurl, usable), "",
 	}
-	if f.loading {
-		parts = append(parts, lipgloss.PlaceHorizontal(usable-2, lipgloss.Center, shimmer(f.tr.Fetching)), "")
-	} else if f.err != "" {
-		parts = append(parts, errstyle.Width(usable-2).Render(f.err), "")
-	}
 	parts = append(parts, lipgloss.PlaceHorizontal(usable-2, lipgloss.Center, f.submitbutton()))
 
 	body := lipgloss.JoinVertical(lipgloss.Left, parts...)
@@ -183,6 +177,9 @@ func (f addform) typefield(usable int) string {
 }
 
 func (f addform) submitbutton() string {
+	if f.loading {
+		return shimmer(f.tr.Fetching)
+	}
 	st := connectbtn
 	if f.focus != fieldsubmit {
 		st = connectbtnblur
