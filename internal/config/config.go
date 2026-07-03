@@ -8,6 +8,7 @@ import (
 
 type Config struct {
 	Lang string `json:"lang"`
+	Mode string `json:"mode"`
 }
 
 func dir() (string, error) {

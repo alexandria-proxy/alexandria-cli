@@ -71,7 +71,7 @@ func main() {
 		}
 	}
 
-	if err := tui.RunMenu(cfg.Lang, menulogomono, menulogocolor); err != nil {
+	if err := tui.RunMenu(cfg.Lang, cfg.Mode, menulogomono, menulogocolor); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}

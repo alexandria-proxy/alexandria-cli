@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alexandria-proxy/alexandria-cli/internal/config"
 	"github.com/alexandria-proxy/alexandria-cli/internal/daemon"
 	"github.com/alexandria-proxy/alexandria-cli/internal/i18n"
 	"github.com/alexandria-proxy/alexandria-cli/internal/ipc"
@@ -299,11 +300,33 @@ type Menu struct {
 	pendidx   int
 }
 
-func NewMenu(lang, mono, color string) Menu {
+func NewMenu(lang, mode, mono, color string) Menu {
 	monocells, w := parselogo(mono)
 	colorcells, _ := parselogo(color)
 	tr := i18n.T(lang)
-	return Menu{tr: tr, monocells: monocells, colorcells: colorcells, colorlogo: rendercells(colorcells), logow: w, panel: newserverspanel(tr), ticking: true, connmode: "proxy", chosenidx: -1, pendidx: -1}
+	if mode != "tun" {
+		mode = "proxy"
+	}
+	return Menu{tr: tr, monocells: monocells, colorcells: colorcells, colorlogo: rendercells(colorcells), logow: w, panel: newserverspanel(tr), ticking: true, connmode: mode, chosenidx: -1, pendidx: -1}
+}
+
+func savemodecmd(mode string) tea.Cmd {
+	return func() tea.Msg {
+		cfg, _ := config.Load()
+		if cfg.Mode != mode {
+			cfg.Mode = mode
+			_ = config.Save(cfg)
+		}
+		return nil
+	}
+}
+
+func (m *Menu) pickmode(mode string) tea.Cmd {
+	if m.connmode == mode {
+		return nil
+	}
+	m.connmode = mode
+	return savemodecmd(mode)
 }
 
 func (m Menu) Init() tea.Cmd {
@@ -652,18 +675,15 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focus = focusconnect
 				return m.withtick(nil)
 			case "left", "h":
-				m.connmode = "proxy"
-				return m, nil
+				return m, m.pickmode("proxy")
 			case "right", "l":
-				m.connmode = "tun"
-				return m, nil
+				return m, m.pickmode("tun")
 			case "enter", " ":
-				if m.connmode == "proxy" {
-					m.connmode = "tun"
-				} else {
-					m.connmode = "proxy"
+				next := "tun"
+				if m.connmode == "tun" {
+					next = "proxy"
 				}
-				return m, nil
+				return m, m.pickmode(next)
 			case "down":
 				m.focus = focussearch
 				m.panel.focused = true
@@ -865,12 +885,11 @@ func (m Menu) mouseupdate(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		mx0 := ux0 + (unitw-mw)/2
 		if msg.X >= mx0 && msg.X < mx0+mw {
 			m.focus = focusmode
+			next := "tun"
 			if msg.X < mx0+mw/2 {
-				m.connmode = "proxy"
-			} else {
-				m.connmode = "tun"
+				next = "proxy"
 			}
-			return m.withtick(nil)
+			return m.withtick(m.pickmode(next))
 		}
 	}
 
