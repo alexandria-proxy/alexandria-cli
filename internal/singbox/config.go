@@ -3,7 +3,10 @@ package singbox
 import (
 	"encoding/json"
 	"fmt"
+	"runtime"
 )
+
+const TunName = "alexat"
 
 func SocksPort(xrayconfig string) int {
 	var c struct {
@@ -28,7 +31,7 @@ func SocksPort(xrayconfig string) int {
 }
 
 func Config(socksport int) string {
-	return fmt.Sprintf(`{
+	base := fmt.Sprintf(`{
   "log": { "level": "warn" },
   "dns": {
     "servers": [
@@ -42,7 +45,6 @@ func Config(socksport int) string {
       "address": ["172.19.0.1/30"],
       "mtu": 1500,
       "auto_route": true,
-      "strict_route": true,
       "stack": "mixed"
     }
   ],
@@ -71,4 +73,27 @@ func Config(socksport int) string {
     ]
   }
 }`, socksport)
+	return forcetunname(base)
+}
+
+func forcetunname(cfg string) string {
+	if runtime.GOOS != "linux" {
+		return cfg
+	}
+	var m map[string]any
+	if json.Unmarshal([]byte(cfg), &m) != nil {
+		return cfg
+	}
+	ins, _ := m["inbounds"].([]any)
+	for _, it := range ins {
+		in, _ := it.(map[string]any)
+		if in != nil && in["type"] == "tun" {
+			in["interface_name"] = TunName
+		}
+	}
+	out, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return cfg
+	}
+	return string(out)
 }
