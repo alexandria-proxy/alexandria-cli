@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	TunName    = "alexat"
+	TunName    = "alexatun0"
 	TableIndex = 2087
 	RuleIndex  = 9100
 )
@@ -49,6 +49,7 @@ func Config(socksport int) string {
       "address": ["172.19.0.1/30"],
       "mtu": 1500,
       "auto_route": true,
+      "strict_route": true,
       "stack": "mixed"
     }
   ],

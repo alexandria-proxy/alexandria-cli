@@ -26,4 +26,8 @@ func tuncleanup(ifname string) {
 			}
 		}
 	}
+
+	for _, fam := range []string{"inet", "ip", "ip6"} {
+		_ = exec.Command("nft", "delete", "table", fam, "sing-box").Run()
+	}
 }
