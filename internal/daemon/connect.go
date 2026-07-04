@@ -79,7 +79,6 @@ func (c *conn) disconnect() ipc.Response {
 func (c *conn) stopnow() {
 	c.mu.Lock()
 	stop := c.stop
-	mode := c.mode
 	c.stop, c.cmds = nil, nil
 	c.connected = false
 	c.mu.Unlock()
@@ -89,9 +88,7 @@ func (c *conn) stopnow() {
 	}
 	c.wg.Wait()
 
-	if mode == "tun" {
-		tuncleanup(singbox.TunName)
-	}
+	tuncleanup(singbox.TunName)
 }
 
 func gracefulstop(p *os.Process, done chan struct{}) {
@@ -132,7 +129,6 @@ func (c *conn) connect(srv subscription.Server, url string, idx int, mode string
 		if !iselevated() {
 			return ipc.Response{Error: "tun mode needs root — run alexandria with sudo/doas"}
 		}
-		tuncleanup(singbox.TunName)
 		sbpath, err := xray.EnsureSingbox()
 		if err != nil {
 			return ipc.Response{Error: "sing-box (tun engine) not found"}

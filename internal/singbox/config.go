@@ -6,7 +6,11 @@ import (
 	"runtime"
 )
 
-const TunName = "alexat"
+const (
+	TunName    = "alexat"
+	TableIndex = 2087
+	RuleIndex  = 9100
+)
 
 func SocksPort(xrayconfig string) int {
 	var c struct {
@@ -89,6 +93,8 @@ func forcetunname(cfg string) string {
 		in, _ := it.(map[string]any)
 		if in != nil && in["type"] == "tun" {
 			in["interface_name"] = TunName
+			in["iproute2_table_index"] = TableIndex
+			in["iproute2_rule_index"] = RuleIndex
 		}
 	}
 	out, err := json.MarshalIndent(m, "", "  ")
