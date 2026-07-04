@@ -67,9 +67,18 @@ func (t *textinput) handlekey(msg tea.KeyMsg, cw int) bool {
 }
 
 func (t *textinput) insert(s string) {
+	ins := make([]rune, 0, len(s))
+	for _, c := range s {
+		if c < 0x20 || c == 0x7f {
+			continue
+		}
+		ins = append(ins, c)
+	}
+	if len(ins) == 0 {
+		return
+	}
 	r := []rune(t.value)
 	cp := clampint(t.cursorpos, 0, len(r))
-	ins := []rune(s)
 	out := make([]rune, 0, len(r)+len(ins))
 	out = append(out, r[:cp]...)
 	out = append(out, ins...)

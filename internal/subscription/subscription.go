@@ -47,7 +47,18 @@ type Subscription struct {
 
 var httpclient = &http.Client{Timeout: 12 * time.Second}
 
+func sanitizeurl(raw string) string {
+	cleaned := strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, raw)
+	return strings.TrimSpace(cleaned)
+}
+
 func Fetch(ctx context.Context, raw string) (Subscription, error) {
+	raw = sanitizeurl(raw)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
 	if err != nil {
 		return Subscription{}, err
