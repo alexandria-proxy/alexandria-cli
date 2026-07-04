@@ -3,13 +3,12 @@ package singbox
 import (
 	"encoding/json"
 	"fmt"
-	"runtime"
 )
 
 const (
-	TunName    = "alexatun0"
-	TableIndex = 2087
-	RuleIndex  = 9100
+	TunName    = "tun0"
+	TableIndex = 2022
+	RuleIndex  = 9000
 )
 
 func SocksPort(xrayconfig string) int {
@@ -78,29 +77,5 @@ func Config(socksport int) string {
     ]
   }
 }`, socksport)
-	return forcetunname(base)
-}
-
-func forcetunname(cfg string) string {
-	if runtime.GOOS != "linux" {
-		return cfg
-	}
-	var m map[string]any
-	if json.Unmarshal([]byte(cfg), &m) != nil {
-		return cfg
-	}
-	ins, _ := m["inbounds"].([]any)
-	for _, it := range ins {
-		in, _ := it.(map[string]any)
-		if in != nil && in["type"] == "tun" {
-			in["interface_name"] = TunName
-			in["iproute2_table_index"] = TableIndex
-			in["iproute2_rule_index"] = RuleIndex
-		}
-	}
-	out, err := json.MarshalIndent(m, "", "  ")
-	if err != nil {
-		return cfg
-	}
-	return string(out)
+	return base
 }
