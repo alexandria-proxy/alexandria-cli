@@ -185,7 +185,11 @@ type statusmsg struct {
 
 func connectcmd(url string, idx int, mode string) tea.Cmd {
 	return func() tea.Msg {
-		if err := daemon.Ensure(); err != nil {
+		ensure := daemon.Ensure
+		if mode == "tun" {
+			ensure = daemon.EnsureElevated
+		}
+		if err := ensure(); err != nil {
 			return connectresultmsg{err: err.Error()}
 		}
 		resp, err := ipc.Send(ipc.Request{Cmd: "connect", URL: url, SrvIdx: idx, Mode: mode})

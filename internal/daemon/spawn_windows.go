@@ -5,6 +5,8 @@ package daemon
 import (
 	"os"
 	"syscall"
+
+	"golang.org/x/sys/windows"
 )
 
 const (
@@ -20,10 +22,26 @@ func detachattr() *syscall.SysProcAttr {
 	}
 }
 
+func childattr() *syscall.SysProcAttr {
+	return &syscall.SysProcAttr{
+		CreationFlags: createnowindow,
+		HideWindow:    true,
+	}
+}
+
 func terminate(p *os.Process) error {
 	return p.Kill()
 }
 
+func elevatehint() string {
+	return "run your terminal as Administrator"
+}
+
 func iselevated() bool {
-	return false
+	var token windows.Token
+	if err := windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_QUERY, &token); err != nil {
+		return false
+	}
+	defer token.Close()
+	return token.IsElevated()
 }

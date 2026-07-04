@@ -141,7 +141,7 @@ func (s *state) handle(req ipc.Request) ipc.Response {
 	s.touch()
 	switch req.Cmd {
 	case "ping":
-		return ipc.Response{OK: true, Version: ipc.ProtocolVersion}
+		return ipc.Response{OK: true, Version: ipc.ProtocolVersion, Elevated: iselevated()}
 
 	case "list":
 		s.mu.Lock()
@@ -291,6 +291,23 @@ func Ensure() error {
 		}
 		stopdaemon()
 	}
+	return spawndaemon()
+}
+
+func EnsureElevated() error {
+	if !iselevated() {
+		return errors.New("tun mode needs elevated privileges — " + elevatehint())
+	}
+	if ipc.DaemonUp() {
+		if resp, err := ipc.Send(ipc.Request{Cmd: "ping"}); err == nil && resp.Version == ipc.ProtocolVersion && resp.Elevated {
+			return nil
+		}
+		stopdaemon()
+	}
+	return spawndaemon()
+}
+
+func spawndaemon() error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err

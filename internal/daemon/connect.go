@@ -127,7 +127,7 @@ func (c *conn) connect(srv subscription.Server, url string, idx int, mode string
 
 	if mode == "tun" {
 		if !iselevated() {
-			return ipc.Response{Error: "tun mode needs root — run alexandria with sudo/doas"}
+			return ipc.Response{Error: "tun mode needs elevated privileges — " + elevatehint()}
 		}
 		sbpath, err := xray.EnsureSingbox()
 		if err != nil {
@@ -197,6 +197,7 @@ func (c *conn) supervise(p proc, stop chan struct{}) {
 
 		cmd := exec.Command(p.path, p.args...)
 		cmd.Env = p.env
+		cmd.SysProcAttr = childattr()
 		cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
 
 		start := time.Now()
