@@ -106,6 +106,7 @@ func Run() error {
 	}
 
 	s.conn.stopnow()
+	cleanlogs()
 	_ = os.Remove(pid)
 	_ = os.Remove(path)
 	return nil

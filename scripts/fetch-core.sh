@@ -142,6 +142,77 @@ install_singbox() {
 	echo "installed sing-box $plat -> $dest" >&2
 }
 
+wintun_arch() {
+	case "$1" in
+		windows-amd64) echo amd64 ;;
+		windows-arm64) echo arm64 ;;
+		*) return 1 ;;
+	esac
+}
+
+install_wintun() {
+	local plat="$1" dest="$2"
+	case "$plat" in
+		windows-*) ;;
+		*) return 0 ;;
+	esac
+	local version file want arch
+	version=$(jq -r '.wintun.version' "$MANIFEST")
+	file=$(jq -r '.wintun.file' "$MANIFEST")
+	want=$(jq -r '.wintun.sha256' "$MANIFEST" | tr 'A-Z' 'a-z')
+	arch=$(wintun_arch "$plat")
+	if [ "$file" = "null" ] || [ "$want" = "null" ] || [ -z "$want" ]; then
+		echo "no wintun manifest entry — run: fetch-core.sh --update-wintun <version>" >&2
+		exit 1
+	fi
+
+	if [ ! -f "$WORK/$file" ]; then
+		echo "downloading $file ..." >&2
+		curl -fsSL -o "$WORK/$file" "https://www.wintun.net/builds/$file"
+	fi
+	local got
+	got=$(sha256_file "$WORK/$file" | tr 'A-Z' 'a-z')
+	if [ "$got" != "$want" ]; then
+		echo "wintun checksum mismatch: got $got want $want" >&2
+		exit 1
+	fi
+
+	local tmp dll
+	tmp="$(mktemp -d)"
+	unzip -o "$WORK/$file" -d "$tmp" >/dev/null
+	dll="$tmp/wintun/bin/$arch/wintun.dll"
+	if [ ! -f "$dll" ]; then
+		echo "wintun.dll for $arch not found in $file" >&2
+		rm -rf "$tmp"
+		exit 1
+	fi
+	mkdir -p "$dest"
+	cp "$dll" "$dest/wintun.dll"
+	rm -rf "$tmp"
+	echo "installed wintun ($arch) -> $dest" >&2
+}
+
+cmd_update_wintun() {
+	local version="${1:-}"
+	if [ -z "$version" ]; then
+		echo "usage: fetch-core.sh --update-wintun <version>" >&2
+		exit 1
+	fi
+	version="${version#v}"
+
+	local file url got manifest
+	file="wintun-$version.zip"
+	url="https://www.wintun.net/builds/$file"
+	echo "fetching $file ..." >&2
+	curl -fsSL -o "$WORK/$file" "$url"
+	got=$(sha256_file "$WORK/$file" | tr 'A-Z' 'a-z')
+
+	manifest=$(jq --arg v "$version" --arg f "$file" --arg s "$got" '.wintun = {version: $v, file: $f, sha256: $s}' "$MANIFEST")
+	mkdir -p "$(dirname "$MANIFEST")"
+	printf '%s\n' "$manifest" >"$MANIFEST"
+	echo "wrote $MANIFEST (wintun $version, $got)" >&2
+}
+
 cmd_update() {
 	local version="${1:-}"
 	if [ -z "$version" ]; then
@@ -213,6 +284,7 @@ cmd_all() {
 	for plat in $PLATFORMS; do
 		install_platform "$plat" "$ROOT/.cores/$plat"
 		install_singbox "$plat" "$ROOT/.cores/$plat"
+		install_wintun "$plat" "$ROOT/.cores/$plat"
 	done
 }
 
@@ -222,6 +294,7 @@ cmd_host() {
 	dest="$(config_bin)"
 	install_platform "$plat" "$dest"
 	install_singbox "$plat" "$dest"
+	install_wintun "$plat" "$dest"
 }
 
 case "${1:-}" in
@@ -233,10 +306,14 @@ case "${1:-}" in
 		shift
 		cmd_update_singbox "${1:-}"
 		;;
+	--update-wintun)
+		shift
+		cmd_update_wintun "${1:-}"
+		;;
 	--all) cmd_all ;;
 	"") cmd_host ;;
 	*)
-		echo "usage: fetch-core.sh [--all | --update <version> | --update-singbox <version>]" >&2
+		echo "usage: fetch-core.sh [--all | --update <version> | --update-singbox <version> | --update-wintun <version>]" >&2
 		exit 1
 		;;
 esac

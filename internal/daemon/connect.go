@@ -43,6 +43,51 @@ func cfgfile(name string) (string, error) {
 	return filepath.Join(filepath.Dir(p), name), nil
 }
 
+const logcap = 200 << 20
+
+type caplog struct {
+	f   *os.File
+	max int64
+	n   int64
+}
+
+func (w *caplog) Write(p []byte) (int, error) {
+	if w.n+int64(len(p)) > w.max {
+		if err := w.f.Truncate(0); err == nil {
+			w.n = 0
+		}
+	}
+	n, err := w.f.Write(p)
+	w.n += int64(n)
+	return n, err
+}
+
+func (w *caplog) Close() error { return w.f.Close() }
+
+func cleanlogs() {
+	for _, name := range []string{"xray", "sing-box"} {
+		if p, err := cfgfile(name + ".log"); err == nil {
+			_ = os.Remove(p)
+		}
+	}
+}
+
+func openlog(name string) *caplog {
+	p, err := cfgfile(name + ".log")
+	if err != nil {
+		return nil
+	}
+	f, err := os.OpenFile(p, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	if err != nil {
+		return nil
+	}
+	n := int64(0)
+	if fi, err := f.Stat(); err == nil {
+		n = fi.Size()
+	}
+	return &caplog{f: f, max: logcap, n: n}
+}
+
 func isxrayjson(raw string) bool {
 	return strings.HasPrefix(strings.TrimSpace(raw), "{")
 }
@@ -198,10 +243,17 @@ func (c *conn) supervise(p proc, stop chan struct{}) {
 		cmd := exec.Command(p.path, p.args...)
 		cmd.Env = p.env
 		cmd.SysProcAttr = childattr()
-		cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
+		cmd.Stdin = nil
+		lf := openlog(p.name)
+		if lf != nil {
+			cmd.Stdout, cmd.Stderr = lf, lf
+		}
 
 		start := time.Now()
 		if err := cmd.Start(); err != nil {
+			if lf != nil {
+				lf.Close()
+			}
 			c.fail("could not start " + p.name + ": " + err.Error())
 			return
 		}
@@ -212,7 +264,13 @@ func (c *conn) supervise(p proc, stop chan struct{}) {
 		c.mu.Unlock()
 
 		done := make(chan struct{})
-		go func() { _ = cmd.Wait(); close(done) }()
+		go func() {
+			_ = cmd.Wait()
+			if lf != nil {
+				lf.Close()
+			}
+			close(done)
+		}()
 
 		select {
 		case <-stop:
