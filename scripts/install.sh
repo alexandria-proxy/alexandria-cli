@@ -46,6 +46,14 @@ sha256_of() {
 	fi
 }
 
+download() {
+	if [ -t 2 ]; then
+		curl -fL -o "$2" "$1"
+	else
+		curl -fsSL -o "$2" "$1"
+	fi
+}
+
 os="$(detect_os)"
 arch="$(detect_arch)"
 
@@ -114,8 +122,10 @@ archive="alexandria-$os-$arch.tar.gz"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
+[ -t 1 ] && printf '\n  \033[1malexandria-cli\033[0m  \033[2mv%s  %s-%s\033[0m\n\n' "${version#v}" "$os" "$arch"
+
 echo "downloading $archive ..."
-curl -fsSL -o "$tmp/$archive" "$base/$archive"
+download "$base/$archive" "$tmp/$archive"
 curl -fsSL -o "$tmp/checksums.txt" "$base/checksums.txt"
 
 want="$(grep " $archive\$" "$tmp/checksums.txt" | awk '{print $1}')"
@@ -123,6 +133,11 @@ got="$(sha256_of "$tmp/$archive")"
 if [ -z "$want" ] || [ "$want" != "$got" ]; then
 	echo "checksum verification failed for $archive" >&2
 	exit 1
+fi
+if [ -t 1 ]; then
+	printf '  \033[32m✓\033[0m checksums verified\n'
+else
+	echo "checksums verified"
 fi
 
 stage="$tmp/stage"

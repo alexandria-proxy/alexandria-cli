@@ -83,6 +83,52 @@ if (-not $Force -and (Test-Path $cli)) {
 	}
 }
 
+function Format-Bytes($n) {
+	if ($n -ge 1073741824) { return ("{0:N1}GiB" -f ($n / 1073741824)) }
+	if ($n -ge 1048576) { return ("{0:N1}MiB" -f ($n / 1048576)) }
+	if ($n -ge 1024) { return ("{0:N1}KiB" -f ($n / 1024)) }
+	return "$([long]$n)B"
+}
+
+function Download($url, $out) {
+	[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+	if ([Console]::IsOutputRedirected) {
+		(New-Object System.Net.WebClient).DownloadFile($url, $out)
+		return
+	}
+	$resp = [System.Net.WebRequest]::Create($url).GetResponse()
+	$total = $resp.ContentLength
+	$in = $resp.GetResponseStream()
+	$fs = [System.IO.File]::Create($out)
+	$sofar = [long]0
+	$sw = [System.Diagnostics.Stopwatch]::StartNew()
+	try {
+		$buf = New-Object byte[] 65536
+		$last = -1000
+		while (($n = $in.Read($buf, 0, $buf.Length)) -gt 0) {
+			$fs.Write($buf, 0, $n)
+			$sofar += $n
+			if ($sw.ElapsedMilliseconds - $last -ge 100) {
+				$last = $sw.ElapsedMilliseconds
+				$spd = $sofar / [Math]::Max($sw.Elapsed.TotalSeconds, 0.001)
+				if ($total -gt 0) {
+					Write-Host ("`r  {0,3}%  {1} / {2}   {3}/s    " -f [int]($sofar * 100 / $total), (Format-Bytes $sofar), (Format-Bytes $total), (Format-Bytes $spd)) -NoNewline
+				} else {
+					Write-Host ("`r  {0}   {1}/s    " -f (Format-Bytes $sofar), (Format-Bytes $spd)) -NoNewline
+				}
+			}
+		}
+	} finally {
+		$fs.Close(); $in.Close(); $resp.Close()
+	}
+	$spd = $sofar / [Math]::Max($sw.Elapsed.TotalSeconds, 0.001)
+	if ($total -gt 0) {
+		Write-Host ("`r  100%  {0} / {1}   {2}/s    " -f (Format-Bytes $sofar), (Format-Bytes $total), (Format-Bytes $spd))
+	} else {
+		Write-Host ("`r  {0}   {1}/s    " -f (Format-Bytes $sofar), (Format-Bytes $spd))
+	}
+}
+
 $base = "https://github.com/$Repo/releases/download/v$version"
 $archive = "alexandria-windows-$arch.zip"
 $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid())
@@ -90,13 +136,14 @@ New-Item -ItemType Directory -Path $tmp | Out-Null
 
 try {
 	Write-Host "downloading $archive ..."
-	Invoke-WebRequest -Uri "$base/$archive" -OutFile "$tmp\$archive"
-	Invoke-WebRequest -Uri "$base/checksums.txt" -OutFile "$tmp\checksums.txt"
+	Download "$base/$archive" "$tmp\$archive"
+	(New-Object System.Net.WebClient).DownloadFile("$base/checksums.txt", "$tmp\checksums.txt")
 
 	$line = Select-String -Path "$tmp\checksums.txt" -SimpleMatch $archive | Select-Object -First 1
 	$want = ($line.Line -split '\s+')[0].ToLower()
 	$got = (Get-FileHash "$tmp\$archive" -Algorithm SHA256).Hash.ToLower()
 	if (-not $want -or $want -ne $got) { throw "checksum verification failed for $archive" }
+	Write-Host "checksums verified" -ForegroundColor Green
 
 	$stage = Join-Path $tmp "stage"
 	New-Item -ItemType Directory -Path $stage | Out-Null
