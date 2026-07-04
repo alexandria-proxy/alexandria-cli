@@ -45,6 +45,8 @@ const (
 	shineband     = 0.30
 	shinepeak     = 0.92
 	shinefloor    = 24 // colors dimmer than this stay put
+
+	langsettle = 400 * time.Millisecond
 )
 
 type shinemsg time.Time
@@ -58,18 +60,19 @@ type cell struct {
 }
 
 type LangPicker struct {
-	cells  [][]cell
-	logow  int
-	frame  int
-	cursor int
-	chosen string
-	width  int
-	height int
+	cells   [][]cell
+	logow   int
+	frame   int
+	cursor  int
+	chosen  string
+	created time.Time
+	width   int
+	height  int
 }
 
 func NewLangPicker(logo string) LangPicker {
 	cells, w := parselogo(logo)
-	return LangPicker{cells: cells, logow: w}
+	return LangPicker{cells: cells, logow: w, created: time.Now()}
 }
 
 func parselogo(s string) ([][]cell, int) {
@@ -99,6 +102,15 @@ func (m LangPicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		return m, tea.HideCursor
+	case tea.MouseMsg:
+		if i := m.rowaty(msg.Y); i >= 0 {
+			m.cursor = i
+			if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+				m.chosen = languages[i].code
+				return m, tea.Quit
+			}
+		}
+		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "q", "esc":
@@ -108,6 +120,9 @@ func (m LangPicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "down", "j":
 			m.cursor = (m.cursor + 1) % len(languages)
 		case "enter", " ":
+			if time.Since(m.created) < langsettle {
+				return m, nil
+			}
 			m.chosen = languages[m.cursor].code
 			return m, tea.Quit
 		}
@@ -115,9 +130,7 @@ func (m LangPicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m LangPicker) View() string {
-	tr := i18n.T(languages[m.cursor].code)
-
+func (m LangPicker) optionrows() []string {
 	pad := selbase.Render(" ")
 	rows := make([]string, len(languages))
 	for i, lang := range languages {
@@ -129,24 +142,48 @@ func (m LangPicker) View() string {
 			rows[i] = optionstyle.Render("○ " + lang.flag + lang.label)
 		}
 	}
+	return rows
+}
 
-	title := titlestyle.Render(tr.ChooseLanguage)
+func (m LangPicker) bodylayout() (string, int) {
+	title := titlestyle.Render(i18n.T(languages[m.cursor].code).ChooseLanguage)
 	logo := m.renderlogo()
 	logolines := strings.Split(logo, "\n")
-	top := logo
-	titlerow := title
+	top, titlerow, topH := logo, title, 1
 	if len(logolines) > 1 {
 		top = strings.Join(logolines[:len(logolines)-1], "\n")
 		titlerow = stampcenter(logolines[len(logolines)-1], title, m.logow)
+		topH = len(logolines) - 1
 	}
-
 	body := lipgloss.JoinVertical(
 		lipgloss.Center,
 		top,
 		titlerow,
 		"",
-		lipgloss.JoinVertical(lipgloss.Left, rows...),
+		lipgloss.JoinVertical(lipgloss.Left, m.optionrows()...),
 	)
+	return body, topH + 2
+}
+
+func (m LangPicker) rowaty(y int) int {
+	if m.width == 0 || m.height == 0 {
+		return -1
+	}
+	body, rowoffset := m.bodylayout()
+	top := int(math.Round(float64((m.height-1)-lipgloss.Height(body)) * 0.5))
+	if top < 0 {
+		top = 0
+	}
+	i := y - top - rowoffset
+	if i < 0 || i >= len(languages) {
+		return -1
+	}
+	return i
+}
+
+func (m LangPicker) View() string {
+	tr := i18n.T(languages[m.cursor].code)
+	body, _ := m.bodylayout()
 	hint := hintstyle.Render(tr.Hint)
 
 	if m.width == 0 || m.height == 0 {

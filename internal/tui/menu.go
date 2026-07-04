@@ -509,6 +509,9 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.mode == modeactions {
 			return m.mouseactions(msg)
 		}
+		if m.mode == modeadd {
+			return m.mouseadd(msg)
+		}
 		if m.mode == modelist {
 			return m.mouseupdate(msg)
 		}
@@ -931,6 +934,79 @@ func (m Menu) mouseactions(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	m.actionmsg = ""
 	m.actionconfirm = false
 	return m.withtick(nil)
+}
+
+func (m Menu) mouseadd(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if m.width == 0 || msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft {
+		return m, nil
+	}
+	var fx0, fy0, formw int
+	if m.width < twocolmin {
+		unit, _, _, _ := m.viewunit()
+		fx0, fy0, formw = 0, lipgloss.Height(unit), m.width
+	} else {
+		leftw := m.width / 2
+		fx0, fy0, formw = leftw, 0, m.width-leftw
+	}
+	if msg.X < fx0 {
+		return m, nil
+	}
+	usable := formw - 4
+	if usable < 16 {
+		usable = formw
+	}
+	cx0, cy0 := fx0+2, fy0+1
+
+	y := cy0
+	for _, p := range m.form.parts(usable) {
+		h := lipgloss.Height(p.view)
+		if msg.Y >= y && msg.Y < y+h {
+			return m.clickform(p.kind, msg.X-cx0, msg.Y-y, usable)
+		}
+		y += h
+	}
+	return m, nil
+}
+
+func (m Menu) clickform(kind string, lx, ly, usable int) (tea.Model, tea.Cmd) {
+	cw := usable - 2
+	switch kind {
+	case "type":
+		m.form.focus = fieldtype
+		if m.form.typeopen {
+			if i := ly - 1; i >= 0 && i < len(m.form.typeoptions()) {
+				m.form.typeidx = i
+			}
+			m.form.typeopen = false
+		} else {
+			m.form.typeopen = true
+			m.form.optcursor = m.form.typeidx
+		}
+		return m.withtick(nil)
+	case "name":
+		m.form.focus = fieldname
+		m.form.typeopen = false
+		m.form.name.clickto(ly-2, lx, cw)
+		return m.withtick(nil)
+	case "url":
+		m.form.focus = fieldurl
+		m.form.typeopen = false
+		m.form.url.clickto(ly-2, lx, cw)
+		return m.withtick(nil)
+	case "submit":
+		btnw := lipgloss.Width(m.form.submitbutton())
+		x0 := (usable - 2 - btnw) / 2
+		if lx < x0 || lx >= x0+btnw {
+			return m, nil
+		}
+		m.form.focus = fieldsubmit
+		if m.form.loading {
+			return m.withtick(nil)
+		}
+		m.form.loading = true
+		return m.withtick(addsubcmd(strings.TrimSpace(m.form.url.value)))
+	}
+	return m, nil
 }
 
 func (m Menu) clickconnect() (tea.Model, tea.Cmd) {

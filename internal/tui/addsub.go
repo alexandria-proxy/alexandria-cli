@@ -105,25 +105,40 @@ func (f addform) update(msg tea.KeyMsg, cw int) (addform, formresult) {
 	return f, formnone
 }
 
+type formpart struct {
+	kind string
+	view string
+}
+
+func (f addform) parts(usable int) []formpart {
+	title := f.tr.AddSubTitle
+	if f.editing {
+		title = f.tr.EditSubTitle
+	}
+	return []formpart{
+		{"title", paneltitlest.Render(title)},
+		{"gap", ""},
+		{"type", f.typefield(usable)},
+		{"gap", ""},
+		{"name", labeledinput(f.tr.FieldName, f.name, f.focus == fieldname, usable)},
+		{"gap", ""},
+		{"url", labeledinput(f.tr.FieldURL, f.url, f.focus == fieldurl, usable)},
+		{"gap", ""},
+		{"submit", lipgloss.PlaceHorizontal(usable-2, lipgloss.Center, f.submitbutton())},
+	}
+}
+
 func (f addform) render(width int) string {
 	usable := width - 4
 	if usable < 16 {
 		usable = width
 	}
-
-	title := f.tr.AddSubTitle
-	if f.editing {
-		title = f.tr.EditSubTitle
+	ps := f.parts(usable)
+	views := make([]string, len(ps))
+	for i, p := range ps {
+		views[i] = p.view
 	}
-	parts := []string{
-		paneltitlest.Render(title), "",
-		f.typefield(usable), "",
-		labeledinput(f.tr.FieldName, f.name, f.focus == fieldname, usable), "",
-		labeledinput(f.tr.FieldURL, f.url, f.focus == fieldurl, usable), "",
-	}
-	parts = append(parts, lipgloss.PlaceHorizontal(usable-2, lipgloss.Center, f.submitbutton()))
-
-	body := lipgloss.JoinVertical(lipgloss.Left, parts...)
+	body := lipgloss.JoinVertical(lipgloss.Left, views...)
 	return lipgloss.NewStyle().PaddingTop(1).PaddingLeft(2).Render(body)
 }
 

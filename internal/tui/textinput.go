@@ -66,6 +66,20 @@ func (t *textinput) handlekey(msg tea.KeyMsg, cw int) bool {
 	return handled
 }
 
+func (t *textinput) clickto(row, col, cw int) {
+	if cw < 1 {
+		cw = 1
+	}
+	if row < 0 {
+		row = 0
+	}
+	if col < 0 {
+		col = 0
+	}
+	t.cursorpos = clampint((t.scroll+row)*cw+col, 0, t.length())
+	t.clampscroll(cw)
+}
+
 func (t *textinput) insert(s string) {
 	ins := make([]rune, 0, len(s))
 	for _, c := range s {
