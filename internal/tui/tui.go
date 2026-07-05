@@ -13,6 +13,6 @@ func RunLangPicker(logo string) (string, error) {
 }
 
 func RunMenu(lang, mode, mono, color string) error {
-	_, err := tea.NewProgram(NewMenu(lang, mode, mono, color), tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
+	_, err := tea.NewProgram(NewMenu(lang, mode, mono, color), tea.WithAltScreen(), tea.WithMouseAllMotion()).Run()
 	return err
 }

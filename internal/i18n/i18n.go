@@ -11,13 +11,16 @@ type Strings struct {
 	SearchHint   string
 	Autoupdate   string
 	Expires      string
+	Updated      string
 	Used         string
 	Of           string
+	NoteLabel    string
 	NoSubs       string
 	AddSubHint   string
 
 	AddSubTitle      string
 	EditSubTitle     string
+	InfoTitle        string
 	FieldType        string
 	FieldName        string
 	FieldURL         string
@@ -37,6 +40,7 @@ type Strings struct {
 	ActionUnpin    string
 	ActionCopyURL  string
 	ActionEdit     string
+	ActionInfo     string
 	ActionRemove   string
 	Updating       string
 	Pinging        string
@@ -55,13 +59,16 @@ var table = map[string]Strings{
 		SearchHint:     "Type here to search",
 		Autoupdate:     "autoupdate",
 		Expires:        "expires",
+		Updated:        "updated",
 		Used:           "used",
 		Of:             "of",
+		NoteLabel:      "note",
 		NoSubs:         "No subscriptions found",
 		AddSubHint:     "Press «ctrl + a» to add",
 
 		AddSubTitle:      "Add subscription",
 		EditSubTitle:     "Edit subscription",
+		InfoTitle:        "Subscription info",
 		FieldType:        "Type",
 		FieldName:        "Subscription name",
 		FieldURL:         "Subscription URL",
@@ -81,6 +88,7 @@ var table = map[string]Strings{
 		ActionUnpin:    "unpin",
 		ActionCopyURL:  "copy url",
 		ActionEdit:     "edit",
+		ActionInfo:     "info",
 		ActionRemove:   "remove",
 		Updating:       "updating…",
 		Pinging:        "pinging…",
@@ -98,13 +106,16 @@ var table = map[string]Strings{
 		SearchHint:   "Введите для поиска",
 		Autoupdate:   "автообновление",
 		Expires:      "истекает",
+		Updated:      "обновлено",
 		Used:         "использовано",
 		Of:           "из",
+		NoteLabel:    "заметка",
 		NoSubs:       "Подписки не найдены",
 		AddSubHint:   "Нажмите «ctrl + a» чтобы добавить",
 
 		AddSubTitle:      "Добавление подписки",
 		EditSubTitle:     "Редактирование подписки",
+		InfoTitle:        "Информация о подписке",
 		FieldType:        "Тип",
 		FieldName:        "Имя подписки",
 		FieldURL:         "URL Подписки",
@@ -124,6 +135,7 @@ var table = map[string]Strings{
 		ActionUnpin:    "открепить",
 		ActionCopyURL:  "копировать url",
 		ActionEdit:     "изменить",
+		ActionInfo:     "инфо",
 		ActionRemove:   "удалить",
 		Updating:       "обновление…",
 		Pinging:        "проверка пинга…",
@@ -141,13 +153,16 @@ var table = map[string]Strings{
 		SearchHint:   "برای جستجو تایپ کنید",
 		Autoupdate:   "بروزرسانی خودکار",
 		Expires:      "انقضا",
+		Updated:      "بروزرسانی شده",
 		Used:         "استفاده شده",
 		Of:           "از",
+		NoteLabel:    "یادداشت",
 		NoSubs:       "اشتراکی یافت نشد",
 		AddSubHint:   "«ctrl + a» را برای افزودن بزنید",
 
 		AddSubTitle:      "افزودن اشتراک",
 		EditSubTitle:     "ویرایش اشتراک",
+		InfoTitle:        "اطلاعات اشتراک",
 		FieldType:        "نوع",
 		FieldName:        "نام اشتراک",
 		FieldURL:         "آدرس اشتراک",
@@ -167,6 +182,7 @@ var table = map[string]Strings{
 		ActionUnpin:    "برداشتن سنجاق",
 		ActionCopyURL:  "کپی آدرس",
 		ActionEdit:     "ویرایش",
+		ActionInfo:     "اطلاعات",
 		ActionRemove:   "حذف",
 		Updating:       "در حال بروزرسانی…",
 		Pinging:        "در حال پینگ…",

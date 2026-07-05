@@ -33,16 +33,18 @@ type Server struct {
 }
 
 type Subscription struct {
-	Name       string        `json:"name"`
-	URL        string        `json:"url"`
-	UpdatedAt  time.Time     `json:"updated_at"`
-	AutoUpdate time.Duration `json:"auto_update"`
-	UsedBytes  int64         `json:"used_bytes"`
-	TotalBytes int64         `json:"total_bytes"`
-	Expires    time.Time     `json:"expires"`
-	Note       string        `json:"note"`
-	Pinned     bool          `json:"pinned,omitempty"`
-	Servers    []Server      `json:"servers"`
+	Name        string        `json:"name"`
+	URL         string        `json:"url"`
+	UpdatedAt   time.Time     `json:"updated_at"`
+	AutoUpdate  time.Duration `json:"auto_update"`
+	UsedBytes   int64         `json:"used_bytes"`
+	TotalBytes  int64         `json:"total_bytes"`
+	Expires     time.Time     `json:"expires"`
+	Note        string        `json:"note"`
+	SupportURL  string        `json:"support_url,omitempty"`
+	AnnounceURL string        `json:"announce_url,omitempty"`
+	Pinned      bool          `json:"pinned,omitempty"`
+	Servers     []Server      `json:"servers"`
 }
 
 var httpclient = &http.Client{Timeout: 12 * time.Second}
@@ -122,6 +124,8 @@ func parseheaders(h http.Header, sub *Subscription) {
 	if ann := h.Get("Announce"); ann != "" {
 		sub.Note = unb64prefix(ann)
 	}
+	sub.SupportURL = strings.TrimSpace(h.Get("Support-Url"))
+	sub.AnnounceURL = strings.TrimSpace(h.Get("Announce-Url"))
 }
 
 func unb64prefix(s string) string {

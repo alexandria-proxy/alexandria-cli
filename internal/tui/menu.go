@@ -66,6 +66,7 @@ const (
 	modeadd
 	modeedit
 	modeactions
+	modeinfo
 )
 
 type actionid int
@@ -76,6 +77,7 @@ const (
 	actpin
 	actcopy
 	actedit
+	actinfo
 	actremove
 )
 
@@ -268,6 +270,7 @@ type Menu struct {
 	focus      focuszone
 	mode       panelmode
 	form       addform
+	info       infoview
 	width      int
 	height     int
 	ticking    bool
@@ -509,6 +512,9 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.mode == modeactions {
 			return m.mouseactions(msg)
 		}
+		if m.mode == modeinfo {
+			return m.mouseinfo(msg)
+		}
 		if m.mode == modeadd {
 			return m.mouseadd(msg)
 		}
@@ -525,6 +531,25 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.mode == modeactions {
 			return m.updateactions(msg)
+		}
+		if m.mode == modeinfo {
+			switch msg.String() {
+			case "esc", "left", "h", "q":
+				m.mode = modelist
+				m.info.hover = -1
+				return m.withtick(setpointer("default"))
+			case "up", "k", "shift+tab", "ctrl+up":
+				m.info.focusup()
+				return m.withtick(nil)
+			case "down", "j", "tab", "ctrl+down":
+				m.info.focusdown()
+				return m.withtick(nil)
+			case "enter", " ", "right", "l":
+				if u := m.info.currentlink(); u != "" {
+					return m.withtick(openurl(u))
+				}
+			}
+			return m.withtick(nil)
 		}
 		if m.mode == modeadd {
 			f, res := m.form.update(msg, m.searchwidth())
@@ -936,6 +961,67 @@ func (m Menu) mouseactions(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	return m.withtick(nil)
 }
 
+func (m Menu) infolinkat(x, y int) int {
+	if m.width == 0 {
+		return -1
+	}
+	var fx0, fy0, formw int
+	if m.width < twocolmin {
+		unit, _, _, _ := m.viewunit()
+		fx0, fy0, formw = 0, lipgloss.Height(unit), m.width
+	} else {
+		leftw := m.width / 2
+		fx0, fy0, formw = leftw, 0, m.width-leftw
+	}
+	if x < fx0 {
+		return -1
+	}
+	usable := formw - 4
+	if usable < 16 {
+		usable = formw
+	}
+	yy := fy0 + 1
+	li := 0
+	for _, p := range m.info.parts(usable) {
+		h := lipgloss.Height(p.view)
+		if p.kind == "link" {
+			if y >= yy && y < yy+h {
+				return li
+			}
+			li++
+		}
+		yy += h
+	}
+	return -1
+}
+
+func (m Menu) mouseinfo(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	switch msg.Action {
+	case tea.MouseActionMotion:
+		if h := m.infolinkat(msg.X, msg.Y); h != m.info.hover {
+			m.info.hover = h
+			shape := "default"
+			if h >= 0 {
+				shape = "pointer"
+			}
+			return m.withtick(setpointer(shape))
+		}
+		return m, nil
+	case tea.MouseActionPress:
+		if msg.Button != tea.MouseButtonLeft {
+			return m, nil
+		}
+		if li := m.infolinkat(msg.X, msg.Y); li >= 0 {
+			m.info.focus = li
+			if u := m.info.currentlink(); u != "" {
+				return m.withtick(openurl(u))
+			}
+		}
+		return m.withtick(nil)
+	}
+	return m, nil
+}
+
 func (m Menu) mouseadd(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.width == 0 || msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft {
 		return m, nil
@@ -1140,6 +1226,9 @@ func (m Menu) View() string {
 		if m.mode == modeadd {
 			content = m.form.render(m.width)
 		}
+		if m.mode == modeinfo {
+			content = m.info.render(m.width)
+		}
 		return m.withtoasts(lipgloss.JoinVertical(lipgloss.Left, top, content))
 	}
 
@@ -1148,6 +1237,9 @@ func (m Menu) View() string {
 	rightcontent := m.panel.render(rightw, m.height, busyurl, busybtn, dropdown, anchorurl, flash, m.chosenurl, m.chosenidx)
 	if m.mode == modeadd {
 		rightcontent = m.form.render(rightw)
+	}
+	if m.mode == modeinfo {
+		rightcontent = m.info.render(rightw)
 	}
 	left := lipgloss.Place(leftw, m.height, lipgloss.Center, lipgloss.Center, unit)
 	right := lipgloss.Place(rightw, m.height, lipgloss.Left, lipgloss.Top, rightcontent)
@@ -1269,7 +1361,7 @@ func (m Menu) runheaderbtn(it selitem) (tea.Model, tea.Cmd) {
 }
 
 func (m Menu) actionitems() []actionid {
-	return []actionid{actupdate, actping, actpin, actcopy, actedit, actremove}
+	return []actionid{actupdate, actping, actpin, actcopy, actedit, actinfo, actremove}
 }
 
 func (m Menu) subbyurl(url string) (subscription.Subscription, bool) {
@@ -1293,6 +1385,8 @@ func actionicon(a actionid) string {
 		return "⧉"
 	case actedit:
 		return "✎"
+	case actinfo:
+		return "ⓘ"
 	case actremove:
 		return "✕"
 	}
@@ -1314,6 +1408,8 @@ func (m Menu) actionlabel(a actionid, sub subscription.Subscription) string {
 		return m.tr.ActionCopyURL
 	case actedit:
 		return m.tr.ActionEdit
+	case actinfo:
+		return m.tr.ActionInfo
 	case actremove:
 		return m.tr.ActionRemove
 	}
@@ -1388,6 +1484,13 @@ func (m Menu) runaction(a actionid) (tea.Model, tea.Cmd) {
 		m.form.url.value = sub.URL
 		m.form.url.focusend()
 		m.form.focus = fieldurl
+		m.focus = focusconnect
+		m.panel.focused = false
+		m.panel.serversfocused = false
+		return m.withtick(nil)
+	case actinfo:
+		m.mode = modeinfo
+		m.info = newinfoview(m.tr, sub)
 		m.focus = focusconnect
 		m.panel.focused = false
 		m.panel.serversfocused = false
