@@ -427,6 +427,7 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(pingcmd, heartbeat())
 	case subsloadedmsg:
 		m.panel.subs = msg.subs
+		m.panel.refresh()
 		m.panel.cursor, m.panel.scroll = 0, 0
 		m.ensurechosen()
 		return m, nil
@@ -437,6 +438,7 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.withtick(nil)
 		}
 		m.panel.subs = msg.subs
+		m.panel.refresh()
 		m.ensurechosen()
 		m.mode = modelist
 		return m, nil
@@ -446,6 +448,7 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.panel.subs = msg.subs
+		m.panel.refresh()
 		m.ensurechosen()
 		m.editerr = ""
 		m.mode = modelist
@@ -453,6 +456,7 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case subsresultmsg:
 		if msg.err == "" {
 			m.panel.subs = msg.subs
+			m.panel.refresh()
 			if n := m.panel.itemcount(); m.panel.cursor >= n {
 				m.panel.cursor = max0(n - 1)
 			}
@@ -580,6 +584,7 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case "esc":
 				m.panel.search = textinput{}
+				m.panel.refresh()
 				if m.panel.itemcount() > 0 {
 					m.focus = focusservers
 					m.panel.focused = false
@@ -619,6 +624,7 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.panel.search.handlekey(msg, m.searchwidth())
+			m.panel.refresh()
 			return m, nil
 		}
 		if m.focus == focusservers {
@@ -945,7 +951,7 @@ func (m Menu) mouseactions(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 	lr, ok := m.panel.listrow(m.actionsuburl)
 	if ok {
-		top := py + 1 + 4 + (lr - m.panel.scroll)
+		top := py + 1 + 4 + m.panel.noticerows() + (lr - m.panel.scroll)
 		items := m.actionitems()
 		for j := range items {
 			rowy := top + 1 + j
@@ -1135,7 +1141,7 @@ func panelusable(pw int) int {
 
 func (m Menu) listviewH() int {
 	_, py, _ := m.panelgeom()
-	h := m.height - py - 5
+	h := m.height - py - 5 - m.panel.noticerows()
 	if h < 1 {
 		h = 1
 	}

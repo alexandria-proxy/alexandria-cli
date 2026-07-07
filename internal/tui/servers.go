@@ -5,6 +5,7 @@ import (
 	"math"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/alexandria-proxy/alexandria-cli/internal/i18n"
 	"github.com/alexandria-proxy/alexandria-cli/internal/subscription"
@@ -53,6 +54,44 @@ func pingtext(ms int, tr i18n.Strings) string {
 	return st.Render(fmt.Sprintf("%dms", ms))
 }
 
+const (
+	stageoff = iota
+	stagename
+	stagenote
+	stageserver
+	stagenotfound
+)
+
+type span struct {
+	start int
+	len   int
+	ok    bool
+}
+
+type submatch struct {
+	ghost   bool
+	name    span
+	note    span
+	servers []span
+	expand  bool
+}
+
+type searchstate struct {
+	active bool
+	stage  int
+	subs   []submatch
+}
+
+var (
+	matchst    = lipgloss.NewStyle().Bold(true).Foreground(panelaccent)
+	ghostst    = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	subtitlest = lipgloss.NewStyle().Bold(true)
+	notfoundst = lipgloss.NewStyle().Foreground(lipgloss.Color("#E0A6AC"))
+	ghostdim   = lipgloss.Color("236")
+)
+
+var dimbasefg = &rgb{185, 194, 201}
+
 type serverspanel struct {
 	tr             i18n.Strings
 	subs           []subscription.Subscription
@@ -63,6 +102,141 @@ type serverspanel struct {
 	focused        bool
 	serversfocused bool
 	collapsed      map[string]bool
+	ss             searchstate
+}
+
+func substrmatch(text, lowerq string) span {
+	if lowerq == "" {
+		return span{}
+	}
+	tr := []rune(text)
+	qr := []rune(lowerq)
+	n, m := len(tr), len(qr)
+	if m == 0 || m > n {
+		return span{}
+	}
+	low := make([]rune, n)
+	for i, r := range tr {
+		low[i] = unicode.ToLower(r)
+	}
+	for i := 0; i+m <= n; i++ {
+		hit := true
+		for j := 0; j < m; j++ {
+			if low[i+j] != qr[j] {
+				hit = false
+				break
+			}
+		}
+		if hit {
+			return span{start: i, len: m, ok: true}
+		}
+	}
+	return span{}
+}
+
+func (p serverspanel) computesearch() searchstate {
+	q := strings.ToLower(strings.TrimSpace(p.search.value))
+	ss := searchstate{subs: make([]submatch, len(p.subs))}
+	if q == "" {
+		return ss
+	}
+	ss.active = true
+
+	found := false
+	for i, sub := range p.subs {
+		if sp := substrmatch(sub.Name, q); sp.ok {
+			ss.subs[i].name = sp
+			found = true
+		}
+	}
+	if found {
+		ss.stage = stagename
+		for i := range ss.subs {
+			ss.subs[i].ghost = !ss.subs[i].name.ok
+		}
+		return ss
+	}
+
+	for i, sub := range p.subs {
+		if sub.Note == "" {
+			continue
+		}
+		if sp := substrmatch(oneline(sub.Note), q); sp.ok {
+			ss.subs[i].note = sp
+			found = true
+		}
+	}
+	if found {
+		ss.stage = stagenote
+		for i := range ss.subs {
+			ss.subs[i].ghost = !ss.subs[i].note.ok
+		}
+		return ss
+	}
+
+	for i, sub := range p.subs {
+		sm := &ss.subs[i]
+		sm.servers = make([]span, len(sub.Servers))
+		for j, srv := range sub.Servers {
+			_, name := splitflag(srv.Name)
+			if sp := substrmatch(name, q); sp.ok {
+				sm.servers[j] = sp
+				sm.expand = true
+				found = true
+			}
+		}
+		sm.ghost = !sm.expand
+	}
+	if found {
+		ss.stage = stageserver
+		return ss
+	}
+
+	ss.stage = stagenotfound
+	for i := range ss.subs {
+		ss.subs[i].ghost = true
+	}
+	return ss
+}
+
+func (p *serverspanel) refresh() {
+	p.ss = p.computesearch()
+}
+
+func (p serverspanel) collapsedAt(si int) bool {
+	if p.ss.active && (p.ss.stage == stageserver || p.ss.stage == stagenotfound) {
+		if si < len(p.ss.subs) {
+			return !p.ss.subs[si].expand
+		}
+	}
+	return p.collapsed[p.subs[si].URL]
+}
+
+func (p serverspanel) noticerows() int {
+	if p.ss.active && p.ss.stage == stagenotfound {
+		return 1
+	}
+	return 0
+}
+
+func (p serverspanel) submatchat(si int) submatch {
+	if p.ss.active && si < len(p.ss.subs) {
+		return p.ss.subs[si]
+	}
+	return submatch{}
+}
+
+func (p serverspanel) servermatch(sm submatch, ri int) (bool, span) {
+	if !p.ss.active {
+		return false, span{}
+	}
+	if p.ss.stage == stageserver {
+		if ri < len(sm.servers) {
+			return !sm.servers[ri].ok, sm.servers[ri]
+		}
+		return true, span{}
+	}
+	return sm.ghost, span{}
 }
 
 type selitem struct {
@@ -74,7 +248,7 @@ func (p serverspanel) items() []selitem {
 	items := make([]selitem, 0, p.itemcount())
 	for si, sub := range p.subs {
 		items = append(items, selitem{si, -1})
-		if p.collapsed[sub.URL] {
+		if p.collapsedAt(si) {
 			continue
 		}
 		for ri := range sub.Servers {
@@ -102,7 +276,11 @@ func (p serverspanel) hittest(row, scroll int) (int, string, int) {
 	if row < 4 {
 		return -1, "search", row - 1
 	}
-	target := row - 4 + scroll
+	notice := p.noticerows()
+	if notice > 0 && row < 4+notice {
+		return -1, "notice", 0
+	}
+	target := row - 4 - notice + scroll
 	y := 0
 	idx := 0
 	for si, sub := range p.subs {
@@ -115,7 +293,7 @@ func (p serverspanel) hittest(row, scroll int) (int, string, int) {
 		}
 		y += h
 		idx++
-		if !p.collapsed[sub.URL] {
+		if !p.collapsedAt(si) {
 			for range sub.Servers {
 				if target < y+3 {
 					return idx, "server", target - y
@@ -138,7 +316,7 @@ func (p serverspanel) listrow(url string) (int, bool) {
 			return y, true
 		}
 		y += p.subcardheight(sub)
-		if !p.collapsed[sub.URL] {
+		if !p.collapsedAt(si) {
 			y += 3 * len(sub.Servers)
 		}
 	}
@@ -158,7 +336,7 @@ func (p serverspanel) itemspan(idx int) (int, int) {
 		}
 		y += h
 		i++
-		if !p.collapsed[sub.URL] {
+		if !p.collapsedAt(si) {
 			for range sub.Servers {
 				if i == idx {
 					return y, 3
@@ -178,7 +356,7 @@ func (p serverspanel) listheight() int {
 			y++
 		}
 		y += p.subcardheight(sub)
-		if !p.collapsed[sub.URL] {
+		if !p.collapsedAt(si) {
 			y += 3 * len(sub.Servers)
 		}
 	}
@@ -227,10 +405,10 @@ func headerbtnat(cx, cardleft, usable int) int {
 
 func (p serverspanel) itemcount() int {
 	n := 0
-	for _, sub := range p.subs {
+	for si := range p.subs {
 		n++
-		if !p.collapsed[sub.URL] {
-			n += len(sub.Servers)
+		if !p.collapsedAt(si) {
+			n += len(p.subs[si].Servers)
 		}
 	}
 	return n
@@ -297,20 +475,23 @@ func (p serverspanel) render(width, height int, busyurl string, busybtn int, dro
 		if si > 0 {
 			blocks = append(blocks, "")
 		}
+		sm := p.submatchat(si)
+		ghost := p.ss.active && sm.ghost
 		headsel := p.serversfocused && sel.subidx == si && sel.srvidx == -1
-		collapsed := p.collapsed[sub.URL]
+		collapsed := p.collapsedAt(si)
 		bb := -1
 		if sub.URL == busyurl {
 			bb = busybtn
 		}
-		blocks = append(blocks, p.subcard(sub, usable, headsel, collapsed, bb))
+		blocks = append(blocks, p.subcard(sub, usable, headsel, collapsed, bb, ghost, sm))
 
 		if !collapsed {
 			var rows []string
 			for ri, srv := range sub.Servers {
 				srvsel := p.serversfocused && sel.subidx == si && sel.srvidx == ri
 				chosen := sub.URL == chosenurl && ri == chosenidx
-				rows = append(rows, p.servercard(srv, usable-2, srvsel, chosen))
+				srvghost, srvsp := p.servermatch(sm, ri)
+				rows = append(rows, p.servercard(srv, usable-2, srvsel, chosen, srvghost, srvsp))
 			}
 			if len(rows) > 0 {
 				block := lipgloss.JoinVertical(lipgloss.Left, rows...)
@@ -321,7 +502,8 @@ func (p serverspanel) render(width, height int, busyurl string, busybtn int, dro
 
 	listlines := strings.Split(lipgloss.JoinVertical(lipgloss.Left, blocks...), "\n")
 	total := len(listlines)
-	viewh := height - 5
+	listtop := 5 + p.noticerows()
+	viewh := height - listtop
 	if viewh < 1 {
 		viewh = 1
 	}
@@ -336,13 +518,22 @@ func (p serverspanel) render(width, height int, busyurl string, busybtn int, dro
 	if end > total {
 		end = total
 	}
-	visible := strings.Join(listlines[scroll:end], "\n")
+	vis := append([]string(nil), listlines[scroll:end]...)
+	fadelist(vis, scroll > 0, end < total)
 
-	body := lipgloss.JoinVertical(lipgloss.Left, header, search, visible)
+	parts := []string{header, search}
+	if p.noticerows() > 0 {
+		parts = append(parts, notfoundst.Width(usable).Align(lipgloss.Center).Render(p.tr.NotFound))
+	}
+	parts = append(parts, strings.Join(vis, "\n"))
+
+	body := lipgloss.JoinVertical(lipgloss.Left, parts...)
 	panel := lipgloss.NewStyle().PaddingTop(1).PaddingLeft(2).Render(body)
 
 	if total > viewh {
-		panel = placeoverlay(width-2, 5, scrollbarcol(viewh, total, scroll), panel)
+		bar := strings.Split(scrollbarcol(viewh, total, scroll), "\n")
+		fadelist(bar, scroll > 0, end < total)
+		panel = placeoverlay(width-2, listtop, strings.Join(bar, "\n"), panel)
 	}
 
 	if dropdown != "" {
@@ -351,10 +542,96 @@ func (p serverspanel) render(width, height int, busyurl string, busybtn int, dro
 			if x < 2 {
 				x = 2
 			}
-			panel = placeoverlay(x, 5+lr-scroll, dropdown, panel)
+			panel = placeoverlay(x, listtop+lr-scroll, dropdown, panel)
 		}
 	}
 	return panel
+}
+
+func fadelist(lines []string, top, bottom bool) {
+	topsteps := []float64{0.55, 0.78, 0.9}
+	botsteps := []float64{0.3, 0.56, 0.8}
+	n := len(lines)
+	fac := make([]float64, n)
+	for i := range fac {
+		fac[i] = 1
+	}
+	if top {
+		for i := 0; i < len(topsteps) && i < n; i++ {
+			if topsteps[i] < fac[i] {
+				fac[i] = topsteps[i]
+			}
+		}
+	}
+	if bottom {
+		for i := 0; i < len(botsteps) && i < n; i++ {
+			idx := n - 1 - i
+			if botsteps[i] < fac[idx] {
+				fac[idx] = botsteps[i]
+			}
+		}
+	}
+	for i := range lines {
+		if fac[i] < 1 {
+			lines[i] = dimline(lines[i], fac[i])
+		}
+	}
+}
+
+func scalergb(c *rgb, t float64) *rgb {
+	if c == nil {
+		return nil
+	}
+	return &rgb{int(float64(c.r) * t), int(float64(c.g) * t), int(float64(c.b) * t)}
+}
+
+func dimline(line string, t float64) string {
+	if t >= 1 {
+		return line
+	}
+	if t < 0 {
+		t = 0
+	}
+	cells := parsecells(line)
+	var b strings.Builder
+	b.Grow(len(line) + len(cells)*4)
+	for _, cl := range cells {
+		fg := cl.fg
+		if fg == nil {
+			fg = dimbasefg
+		}
+		writesgr(&b, scalergb(fg, t), scalergb(cl.bg, t), cl.reverse)
+		b.WriteRune(cl.ch)
+	}
+	b.WriteString("\x1b[0m")
+	return b.String()
+}
+
+func hlspan(text string, sp span, base lipgloss.Style) string {
+	if !sp.ok || sp.len <= 0 {
+		return base.Render(text)
+	}
+	r := []rune(text)
+	a, z := sp.start, sp.start+sp.len
+	if a < 0 {
+		a = 0
+	}
+	if z > len(r) {
+		z = len(r)
+	}
+	if a >= z {
+		return base.Render(text)
+	}
+	match := matchst.Italic(base.GetItalic())
+	var out strings.Builder
+	if a > 0 {
+		out.WriteString(base.Render(string(r[:a])))
+	}
+	out.WriteString(match.Render(string(r[a:z])))
+	if z < len(r) {
+		out.WriteString(base.Render(string(r[z:])))
+	}
+	return out.String()
 }
 
 func scrollbarcol(viewh, total, scroll int) string {
@@ -392,7 +669,7 @@ func (p serverspanel) headerstrip(selected bool) string {
 	return strings.Join(cells, " ")
 }
 
-func (p serverspanel) subcard(s subscription.Subscription, usable int, selected, collapsed bool, busybtn int) string {
+func (p serverspanel) subcard(s subscription.Subscription, usable int, selected, collapsed bool, busybtn int, ghost bool, sm submatch) string {
 	bodyw := usable - 4
 	if bodyw < 1 {
 		bodyw = 1
@@ -400,6 +677,8 @@ func (p serverspanel) subcard(s subscription.Subscription, usable int, selected,
 	border := paneldim
 	if selected {
 		border = btngray
+	} else if ghost {
+		border = ghostdim
 	}
 
 	arrow := "⌄ "
@@ -408,7 +687,7 @@ func (p serverspanel) subcard(s subscription.Subscription, usable int, selected,
 	}
 
 	busy := busybtn >= 0
-	title := lipgloss.NewStyle().Bold(true).Render(s.Name)
+	title := hlspan(s.Name, sm.name, subtitlest)
 	if s.Pinned {
 		title += panelfaint.Render(" 🖈")
 	}
@@ -430,16 +709,17 @@ func (p serverspanel) subcard(s subscription.Subscription, usable int, selected,
 	lines := []string{name, meta, usage}
 	italics := []bool{false, false, false}
 	if s.Note != "" {
-		lines = append(lines, panelfaint.Italic(true).Width(bodyw).Align(lipgloss.Center).Render(cliprunes(oneline(s.Note), bodyw)))
+		notetext := hlspan(cliprunes(oneline(s.Note), bodyw), sm.note, panelfaint.Italic(true))
+		lines = append(lines, lipgloss.NewStyle().Width(bodyw).Align(lipgloss.Center).Render(notetext))
 		italics = append(italics, true)
 	}
 	if busy {
 		return busycard(lines, italics, usable, busyphase())
 	}
-	return cardbox(lines, border, usable)
+	return cardbox(lines, border, usable, ghost)
 }
 
-func (p serverspanel) servercard(s subscription.Server, w int, selected, chosen bool) string {
+func (p serverspanel) servercard(s subscription.Server, w int, selected, chosen, ghost bool, namesp span) string {
 	bodyw := w - 4
 	if bodyw < 1 {
 		bodyw = 1
@@ -450,11 +730,13 @@ func (p serverspanel) servercard(s subscription.Server, w int, selected, chosen 
 	if selected {
 		border = btngray
 		arrowst = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("255"))
+	} else if ghost {
+		border = ghostdim
 	}
 
 	flag, name := splitflag(s.Name)
 
-	namepart := namest.Render(name)
+	namepart := hlspan(name, namesp, namest)
 	if chosen {
 		namepart += " " + pinggood.Render("●")
 	}
@@ -488,7 +770,11 @@ func (p serverspanel) servercard(s subscription.Server, w int, selected, chosen 
 
 	lines := strings.Split(content, "\n")
 	for i, ln := range lines {
-		lines[i] = " " + padline(ansi.Truncate(ln, bodyw, ""), bodyw) + " "
+		if ghost {
+			lines[i] = " " + ghostst.Render(padline(ansi.Truncate(ansi.Strip(ln), bodyw, ""), bodyw)) + " "
+		} else {
+			lines[i] = " " + padline(ansi.Truncate(ln, bodyw, ""), bodyw) + " "
+		}
 	}
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder(), false, true, true, true).
@@ -538,14 +824,18 @@ func isjsonconfig(raw string) bool {
 	return strings.HasPrefix(s, "{") || strings.HasPrefix(s, "[")
 }
 
-func cardbox(lines []string, border lipgloss.Color, usable int) string {
+func cardbox(lines []string, border lipgloss.Color, usable int, ghost bool) string {
 	bodyw := usable - 4
 	if bodyw < 1 {
 		bodyw = 1
 	}
 	out := make([]string, len(lines))
 	for i, ln := range lines {
-		out[i] = " " + padline(ansi.Truncate(ln, bodyw, ""), bodyw) + " "
+		if ghost {
+			out[i] = " " + ghostst.Render(padline(ansi.Truncate(ansi.Strip(ln), bodyw, ""), bodyw)) + " "
+		} else {
+			out[i] = " " + padline(ansi.Truncate(ln, bodyw, ""), bodyw) + " "
+		}
 	}
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).

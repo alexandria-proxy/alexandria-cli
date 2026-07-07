@@ -256,7 +256,16 @@ func applysgr(params string, fg, bg *rgb, rev bool) (*rgb, *rgb, bool) {
 		case "27":
 			rev = false
 		case "38", "48":
-			if j+4 < len(tok) && tok[j+1] == "2" {
+			switch {
+			case j+2 < len(tok) && tok[j+1] == "5":
+				c := xterm256(atoi(tok[j+2]))
+				if tok[j] == "38" {
+					fg = c
+				} else {
+					bg = c
+				}
+				j += 2
+			case j+4 < len(tok) && tok[j+1] == "2":
 				c := &rgb{atoi(tok[j+2]), atoi(tok[j+3]), atoi(tok[j+4])}
 				if tok[j] == "38" {
 					fg = c
@@ -265,12 +274,42 @@ func applysgr(params string, fg, bg *rgb, rev bool) (*rgb, *rgb, bool) {
 				}
 				j += 4
 			}
+		case "39":
+			fg = nil
+		case "49":
+			bg = nil
 		}
 	}
 	return fg, bg, rev
 }
 
 func atoi(s string) int { n, _ := strconv.Atoi(s); return n }
+
+func xterm256(n int) *rgb {
+	switch {
+	case n < 16:
+		base := []rgb{
+			{0, 0, 0}, {128, 0, 0}, {0, 128, 0}, {128, 128, 0},
+			{0, 0, 128}, {128, 0, 128}, {0, 128, 128}, {192, 192, 192},
+			{128, 128, 128}, {255, 0, 0}, {0, 255, 0}, {255, 255, 0},
+			{0, 0, 255}, {255, 0, 255}, {0, 255, 255}, {255, 255, 255},
+		}
+		c := base[n]
+		return &c
+	case n < 232:
+		n -= 16
+		step := func(v int) int {
+			if v == 0 {
+				return 0
+			}
+			return 55 + 40*v
+		}
+		return &rgb{step(n / 36 % 6), step(n / 6 % 6), step(n % 6)}
+	default:
+		v := 8 + 10*(n-232)
+		return &rgb{v, v, v}
+	}
+}
 
 func lit(fg, bg *rgb) bool { return maxc(fg) > shinefloor || maxc(bg) > shinefloor }
 

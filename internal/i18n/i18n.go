@@ -46,6 +46,7 @@ type Strings struct {
 	Pinging        string
 	Copied         string
 	Dead           string
+	NotFound       string
 }
 
 var table = map[string]Strings{
@@ -94,6 +95,7 @@ var table = map[string]Strings{
 		Pinging:        "pinging…",
 		Copied:         "copied!",
 		Dead:           "dead",
+		NotFound:       "not found",
 	},
 	"ru": {
 		ChooseLanguage: "Выберите язык",
@@ -141,6 +143,7 @@ var table = map[string]Strings{
 		Pinging:        "проверка пинга…",
 		Copied:         "скопировано!",
 		Dead:           "dead",
+		NotFound:       "не найдено",
 	},
 	"fa": {
 		ChooseLanguage: "زبان را انتخاب کنید",
@@ -188,6 +191,7 @@ var table = map[string]Strings{
 		Pinging:        "در حال پینگ…",
 		Copied:         "کپی شد!",
 		Dead:           "dead",
+		NotFound:       "یافت نشد",
 	},
 }
 
