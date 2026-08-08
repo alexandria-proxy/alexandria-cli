@@ -16,10 +16,11 @@ import (
 )
 
 type proc struct {
-	name string
-	path string
-	args []string
-	env  []string
+	name  string
+	path  string
+	args  []string
+	env   []string
+	stdin string
 }
 
 type conn struct {
@@ -32,7 +33,10 @@ type conn struct {
 	mode      string
 	since     time.Time
 	lasterr   string
+	lastcode  string
+	metrics   int
 	stop      chan struct{}
+	stats     stattrack
 }
 
 func cfgfile(name string) (string, error) {
@@ -65,8 +69,8 @@ func (w *caplog) Write(p []byte) (int, error) {
 func (w *caplog) Close() error { return w.f.Close() }
 
 func cleanlogs() {
-	for _, name := range []string{"xray", "sing-box"} {
-		if p, err := cfgfile(name + ".log"); err == nil {
+	for _, name := range []string{"xray.log", "sing-box.log", "active.json"} {
+		if p, err := cfgfile(name); err == nil {
 			_ = os.Remove(p)
 		}
 	}
@@ -107,11 +111,19 @@ func (c *conn) isconnected() bool {
 
 func (c *conn) status() ipc.Response {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	r := ipc.Response{OK: true, Connected: c.connected, Mode: c.mode, Error: c.lasterr}
+	r := ipc.Response{OK: true, Connected: c.connected, Mode: c.mode, Error: c.lasterr, Code: c.lastcode}
 	if c.connected {
 		r.ActiveURL, r.ActiveSrv = c.url, c.srvidx
 		r.Since = c.since.Unix()
+	}
+	live, metrics := c.connected, c.metrics
+	c.mu.Unlock()
+
+	if live && metrics > 0 {
+		s := c.stats.snapshot()
+		r.HasStats = true
+		r.UpTotal, r.DownTotal = s.up, s.down
+		r.UpRate, r.DownRate = s.uprate, s.downrate
 	}
 	return r
 }
@@ -149,34 +161,27 @@ func gracefulstop(p *os.Process, done chan struct{}) {
 func (c *conn) connect(srv subscription.Server, url string, idx int, mode string) ipc.Response {
 	cfg, err := buildxray(srv.Raw)
 	if err != nil {
-		return ipc.Response{Error: "this server's protocol isn't supported yet: " + err.Error()}
+		return ipc.Response{Error: "this server's protocol isn't supported yet: " + err.Error(), Code: "unsupported"}
 	}
 	xpath, err := xray.Ensure()
 	if err != nil {
-		return ipc.Response{Error: "xray core not found"}
+		return ipc.Response{Error: "xray core not found", Code: "nocore"}
 	}
-	xcfg, err := cfgfile("active.json")
-	if err != nil {
-		return ipc.Response{Error: err.Error()}
-	}
-	if err := os.WriteFile(xcfg, []byte(cfg), 0600); err != nil {
-		return ipc.Response{Error: err.Error()}
-	}
-
 	procs := []proc{{
-		name: "xray",
-		path: xpath,
-		args: []string{"run", "-c", xcfg},
-		env:  append(os.Environ(), "XRAY_LOCATION_ASSET="+filepath.Dir(xpath)),
+		name:  "xray",
+		path:  xpath,
+		args:  []string{"run", "-c", "stdin:"},
+		env:   append(os.Environ(), "XRAY_LOCATION_ASSET="+filepath.Dir(xpath)),
+		stdin: cfg,
 	}}
 
 	if mode == "tun" {
 		if !iselevated() {
-			return ipc.Response{Error: "tun mode needs elevated privileges — " + elevatehint()}
+			return ipc.Response{Error: "tun mode needs elevated privileges — " + elevatehint(), Code: "needelevate"}
 		}
 		sbpath, err := xray.EnsureSingbox()
 		if err != nil {
-			return ipc.Response{Error: "sing-box (tun engine) not found"}
+			return ipc.Response{Error: "sing-box (tun engine) not found", Code: "nosingbox"}
 		}
 		tuncfg, err := cfgfile("tun.json")
 		if err != nil {
@@ -193,10 +198,10 @@ func (c *conn) connect(srv subscription.Server, url string, idx int, mode string
 		})
 	}
 
-	return c.start(url, idx, mode, procs)
+	return c.start(url, idx, mode, procs, xraygen.MetricsPort(cfg))
 }
 
-func (c *conn) start(url string, idx int, mode string, procs []proc) ipc.Response {
+func (c *conn) start(url string, idx int, mode string, procs []proc, metrics int) ipc.Response {
 	c.stopnow()
 
 	stop := make(chan struct{})
@@ -204,26 +209,33 @@ func (c *conn) start(url string, idx int, mode string, procs []proc) ipc.Respons
 	c.connected = true
 	c.url, c.srvidx, c.mode = url, idx, mode
 	c.since = time.Now()
-	c.lasterr = ""
+	c.lasterr, c.lastcode = "", ""
+	c.metrics = metrics
 	c.stop = stop
 	c.cmds = make(map[string]*exec.Cmd, len(procs))
 	c.mu.Unlock()
+
+	c.stats.reset()
 
 	c.wg.Add(len(procs))
 	for _, p := range procs {
 		go c.supervise(p, stop)
 	}
+	if metrics > 0 {
+		c.wg.Add(1)
+		go c.pollstats(metrics, stop)
+	}
 
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		c.mu.Lock()
-		ok, lasterr := c.connected, c.lasterr
+		ok, lasterr, lastcode := c.connected, c.lasterr, c.lastcode
 		c.mu.Unlock()
 		if !ok {
 			if lasterr == "" {
 				lasterr = "failed to start"
 			}
-			return ipc.Response{Error: lasterr}
+			return ipc.Response{Error: lasterr, Code: lastcode}
 		}
 		time.Sleep(150 * time.Millisecond)
 	}
@@ -243,7 +255,11 @@ func (c *conn) supervise(p proc, stop chan struct{}) {
 		cmd := exec.Command(p.path, p.args...)
 		cmd.Env = p.env
 		cmd.SysProcAttr = childattr()
-		cmd.Stdin = nil
+		if p.stdin != "" {
+			cmd.Stdin = strings.NewReader(p.stdin)
+		} else {
+			cmd.Stdin = nil
+		}
 		lf := openlog(p.name)
 		if lf != nil {
 			cmd.Stdout, cmd.Stderr = lf, lf
@@ -287,7 +303,7 @@ func (c *conn) supervise(p proc, stop chan struct{}) {
 
 		if time.Since(start) < 2*time.Second {
 			if fails++; fails >= 3 {
-				c.fail(p.name + " keeps exiting — check the config or a port conflict")
+				c.failcode(p.name+" keeps exiting — check the config or a port conflict", "crashloop")
 				return
 			}
 		} else {
@@ -298,6 +314,10 @@ func (c *conn) supervise(p proc, stop chan struct{}) {
 }
 
 func (c *conn) fail(msg string) {
+	c.failcode(msg, "")
+}
+
+func (c *conn) failcode(msg, code string) {
 	c.mu.Lock()
 	if !c.connected {
 		c.mu.Unlock()
@@ -305,6 +325,7 @@ func (c *conn) fail(msg string) {
 	}
 	c.connected = false
 	c.lasterr = msg
+	c.lastcode = code
 	stop := c.stop
 	c.stop, c.cmds = nil, nil
 	c.mu.Unlock()
