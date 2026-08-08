@@ -99,7 +99,7 @@ The fresh binary isn't on your `PATH` yet, so run it with `./`. For TUN mode use
 
 <div align="left">
 
-**The installer** pulls the prebuilt archive from [Releases](https://github.com/alexandria-proxy/alexandria-cli/releases), verifies it against `checksums.txt`, and drops `alexandria-cli` + the bundled `xray` into a PATH-wired prefix.
+**The installer** pulls the prebuilt archive from [Releases](https://github.com/alexandria-proxy/alexandria-cli/releases), verifies it against `digests.txt`, and drops `alexandria-cli` + the bundled `xray` into a PATH-wired prefix.
 
 **Run it:**
 

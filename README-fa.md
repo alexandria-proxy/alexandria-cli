@@ -99,7 +99,7 @@ go build -o alexandria-cli .
 
 ### پس از نصب
 
-**نصب‌کننده** آرشیو از پیش ساخته‌شده را از [Releases](https://github.com/alexandria-proxy/alexandria-cli/releases) دریافت می‌کند، آن را با `checksums.txt` بررسی می‌کند و `alexandria-cli` به‌همراه `xray` همراه را در مسیری که به PATH افزوده شده قرار می‌دهد.
+**نصب‌کننده** آرشیو از پیش ساخته‌شده را از [Releases](https://github.com/alexandria-proxy/alexandria-cli/releases) دریافت می‌کند، آن را با `digests.txt` بررسی می‌کند و `alexandria-cli` به‌همراه `xray` همراه را در مسیری که به PATH افزوده شده قرار می‌دهد.
 
 **اجرا:**
 

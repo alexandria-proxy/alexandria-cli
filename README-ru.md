@@ -99,7 +99,7 @@ go build -o alexandria-cli .
 
 <div align="left">
 
-**Установщик** скачивает готовый архив из [Releases](https://github.com/alexandria-proxy/alexandria-cli/releases), проверяет его по `checksums.txt` и кладёт `alexandria-cli` + встроенный `xray` в каталог, добавленный в PATH.
+**Установщик** скачивает готовый архив из [Releases](https://github.com/alexandria-proxy/alexandria-cli/releases), проверяет его по `digests.txt` и кладёт `alexandria-cli` + встроенный `xray` в каталог, добавленный в PATH.
 
 **Запуск:**
 
