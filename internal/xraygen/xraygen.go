@@ -12,46 +12,144 @@ import (
 )
 
 const (
-	socksport = 10808
-	httpport  = 10809
+	socksport  = 10808
+	httpport   = 10809
+	metricslo  = 10810
+	metricshi  = 10819
+	metricsin  = "metrics_in"
+	metricsout = "metrics_out"
+	userlevel  = 8
 )
 
 var errunsupported = errors.New("unsupported share-link protocol")
 
+type Opts struct {
+	Metrics int
+}
+
+func Defaults() Opts {
+	return Opts{Metrics: freeport(metricslo, metricshi)}
+}
+
 func Build(link string) (string, error) {
+	return BuildOpts(link, Defaults())
+}
+
+func BuildOpts(link string, o Opts) (string, error) {
 	ob, err := outbound(strings.TrimSpace(link))
 	if err != nil {
 		return "", err
 	}
+
+	inbounds := []any{
+		map[string]any{
+			"tag":      "socks",
+			"listen":   "127.0.0.1",
+			"port":     socksport,
+			"protocol": "socks",
+			"settings": map[string]any{"udp": true, "auth": "noauth"},
+			"sniffing": map[string]any{"enabled": true, "destOverride": []any{"http", "tls", "quic"}},
+		},
+		map[string]any{
+			"tag":      "http",
+			"listen":   "127.0.0.1",
+			"port":     httpport,
+			"protocol": "http",
+		},
+	}
+
 	cfg := map[string]any{
 		"log": map[string]any{"loglevel": "warning"},
-		"inbounds": []any{
-			map[string]any{
-				"tag":      "socks",
-				"listen":   "127.0.0.1",
-				"port":     socksport,
-				"protocol": "socks",
-				"settings": map[string]any{"udp": true, "auth": "noauth"},
-				"sniffing": map[string]any{"enabled": true, "destOverride": []any{"http", "tls", "quic"}},
-			},
-			map[string]any{
-				"tag":      "http",
-				"listen":   "127.0.0.1",
-				"port":     httpport,
-				"protocol": "http",
-			},
-		},
 		"outbounds": []any{
 			ob,
-			map[string]any{"tag": "direct", "protocol": "freedom"},
+			map[string]any{
+				"tag":      "direct",
+				"protocol": "freedom",
+				"settings": map[string]any{"domainStrategy": "UseIP"},
+			},
 			map[string]any{"tag": "block", "protocol": "blackhole"},
 		},
 	}
+
+	rules := []any{}
+	if o.Metrics > 0 {
+		inbounds = append(inbounds, map[string]any{
+			"tag":      metricsin,
+			"listen":   "127.0.0.1",
+			"port":     o.Metrics,
+			"protocol": "dokodemo-door",
+			"settings": map[string]any{"address": "127.0.0.1"},
+		})
+		rules = append(rules, map[string]any{
+			"inboundTag":  []any{metricsin},
+			"outboundTag": metricsout,
+		})
+		cfg["stats"] = map[string]any{}
+		cfg["metrics"] = map[string]any{"tag": metricsout}
+		cfg["policy"] = policy()
+	}
+
+	cfg["inbounds"] = inbounds
+	cfg["routing"] = map[string]any{"domainStrategy": "IPIfNonMatch", "rules": rules}
+
 	b, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return "", err
 	}
 	return string(b), nil
+}
+
+func MetricsPort(cfg string) int {
+	var c struct {
+		Inbounds []struct {
+			Tag  string `json:"tag"`
+			Port int    `json:"port"`
+		} `json:"inbounds"`
+	}
+	if json.Unmarshal([]byte(cfg), &c) != nil {
+		return 0
+	}
+	for _, in := range c.Inbounds {
+		if in.Tag == metricsin && in.Port > 0 {
+			return in.Port
+		}
+	}
+	return 0
+}
+
+func policy() map[string]any {
+	return map[string]any{
+		"levels": map[string]any{
+			"0": map[string]any{
+				"statsUserUplink":   true,
+				"statsUserDownlink": true,
+			},
+			strconv.Itoa(userlevel): map[string]any{
+				"connIdle":     300,
+				"downlinkOnly": 1,
+				"handshake":    4,
+				"uplinkOnly":   1,
+			},
+		},
+		"system": map[string]any{
+			"statsInboundUplink":    true,
+			"statsInboundDownlink":  true,
+			"statsOutboundUplink":   true,
+			"statsOutboundDownlink": true,
+		},
+	}
+}
+
+func freeport(lo, hi int) int {
+	for p := lo; p <= hi; p++ {
+		l, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(p))
+		if err != nil {
+			continue
+		}
+		_ = l.Close()
+		return p
+	}
+	return 0
 }
 
 func Supported(link string) bool {
@@ -88,6 +186,7 @@ func vless(link string) (map[string]any, error) {
 	user := map[string]any{
 		"id":         u.User.Username(),
 		"encryption": deflt(q.Get("encryption"), "none"),
+		"level":      userlevel,
 	}
 	if f := q.Get("flow"); f != "" {
 		user["flow"] = f
@@ -176,6 +275,7 @@ func vmess(link string) (map[string]any, error) {
 					"id":       v.ID,
 					"alterId":  anyint(v.Aid),
 					"security": deflt(v.Scy, "auto"),
+					"level":    userlevel,
 				}},
 			}},
 		},
