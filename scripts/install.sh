@@ -126,18 +126,20 @@ trap 'rm -rf "$tmp"' EXIT
 
 echo "downloading $archive ..."
 download "$base/$archive" "$tmp/$archive"
-curl -fsSL -o "$tmp/checksums.txt" "$base/checksums.txt"
+if ! curl -fsSL -o "$tmp/digests.txt" "$base/digests.txt" 2>/dev/null; then
+	curl -fsSL -o "$tmp/digests.txt" "$base/checksums.txt"
+fi
 
-want="$(grep " $archive\$" "$tmp/checksums.txt" | awk '{print $1}')"
+want="$(grep " $archive\$" "$tmp/digests.txt" | awk '{print $1}')"
 got="$(sha256_of "$tmp/$archive")"
 if [ -z "$want" ] || [ "$want" != "$got" ]; then
-	echo "checksum verification failed for $archive" >&2
+	echo "digest verification failed for $archive" >&2
 	exit 1
 fi
 if [ -t 1 ]; then
-	printf '  \033[32m✓\033[0m checksums verified\n'
+	printf '  \033[32m✓\033[0m digests verified\n'
 else
-	echo "checksums verified"
+	echo "digests verified"
 fi
 
 stage="$tmp/stage"

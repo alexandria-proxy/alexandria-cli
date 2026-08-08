@@ -137,13 +137,17 @@ New-Item -ItemType Directory -Path $tmp | Out-Null
 try {
 	Write-Host "downloading $archive ..."
 	Download "$base/$archive" "$tmp\$archive"
-	(New-Object System.Net.WebClient).DownloadFile("$base/checksums.txt", "$tmp\checksums.txt")
+	try {
+		(New-Object System.Net.WebClient).DownloadFile("$base/digests.txt", "$tmp\digests.txt")
+	} catch {
+		(New-Object System.Net.WebClient).DownloadFile("$base/checksums.txt", "$tmp\digests.txt")
+	}
 
-	$line = Select-String -Path "$tmp\checksums.txt" -SimpleMatch $archive | Select-Object -First 1
+	$line = Select-String -Path "$tmp\digests.txt" -SimpleMatch $archive | Select-Object -First 1
 	$want = ($line.Line -split '\s+')[0].ToLower()
 	$got = (Get-FileHash "$tmp\$archive" -Algorithm SHA256).Hash.ToLower()
-	if (-not $want -or $want -ne $got) { throw "checksum verification failed for $archive" }
-	Write-Host "checksums verified" -ForegroundColor Green
+	if (-not $want -or $want -ne $got) { throw "digest verification failed for $archive" }
+	Write-Host "digests verified" -ForegroundColor Green
 
 	$stage = Join-Path $tmp "stage"
 	New-Item -ItemType Directory -Path $stage | Out-Null

@@ -42,7 +42,7 @@ archives:
       - README.md
 
 checksum:
-  name_template: "checksums.txt"
+  name_template: "digests.txt"
 
 snapshot:
   version_template: "{{ incpatch .Version }}-snapshot"

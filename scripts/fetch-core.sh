@@ -1,9 +1,5 @@
 #!/usr/bin/env bash
 
-
-#for build
-
-
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -75,7 +71,7 @@ install_platform() {
 	local got
 	got=$(sha256_file "$WORK/$file" | tr 'A-Z' 'a-z')
 	if [ "$got" != "$want" ]; then
-		echo "checksum mismatch for $plat: got $got want $want" >&2
+		echo "digest mismatch for $plat: got $got want $want" >&2
 		exit 1
 	fi
 
@@ -134,7 +130,7 @@ install_singbox() {
 	local got
 	got=$(sha256_file "$WORK/$file" | tr 'A-Z' 'a-z')
 	if [ "$got" != "$want" ]; then
-		echo "sing-box checksum mismatch for $plat: got $got want $want" >&2
+		echo "sing-box digest mismatch for $plat: got $got want $want" >&2
 		exit 1
 	fi
 
@@ -173,7 +169,7 @@ install_wintun() {
 	local got
 	got=$(sha256_file "$WORK/$file" | tr 'A-Z' 'a-z')
 	if [ "$got" != "$want" ]; then
-		echo "wintun checksum mismatch: got $got want $want" >&2
+		echo "wintun digest mismatch: got $got want $want" >&2
 		exit 1
 	fi
 
