@@ -45,6 +45,10 @@ var (
 	modebtnsel = lipgloss.NewStyle().Bold(true).Background(btngray).Foreground(lipgloss.Color("16"))
 	modeplain  = lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
 
+	statsdown  = lipgloss.NewStyle().Foreground(lipgloss.Color("#8FBF9F"))
+	statsup    = lipgloss.NewStyle().Foreground(lipgloss.Color("#E0A6AC"))
+	statstotal = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+
 	actionrow    = lipgloss.NewStyle().Padding(0, 1).Foreground(lipgloss.Color("250"))
 	actionrowsel = lipgloss.NewStyle().Bold(true).Padding(0, 1).Background(btngray).Foreground(lipgloss.Color("16"))
 	actiondanger = lipgloss.NewStyle().Bold(true).Padding(0, 1).Background(lipgloss.Color("#E0A6AC")).Foreground(lipgloss.Color("16"))
@@ -178,11 +182,19 @@ type connectresultmsg struct {
 }
 
 type statusmsg struct {
+	live      bool
 	connected bool
 	mode      string
 	url       string
 	idx       int
 	since     int64
+	err       string
+	code      string
+	hasstats  bool
+	up        int64
+	down      int64
+	uprate    int64
+	downrate  int64
 }
 
 func connectcmd(url string, idx int, mode string) tea.Cmd {
@@ -225,18 +237,27 @@ func statuscmd() tea.Msg {
 	if err != nil || !resp.OK {
 		return statusmsg{}
 	}
-	return statusmsg{connected: resp.Connected, mode: resp.Mode, url: resp.ActiveURL, idx: resp.ActiveSrv, since: resp.Since}
+	return statusmsg{
+		live:      true,
+		connected: resp.Connected,
+		mode:      resp.Mode,
+		url:       resp.ActiveURL,
+		idx:       resp.ActiveSrv,
+		since:     resp.Since,
+		err:       resp.Error,
+		code:      resp.Code,
+		hasstats:  resp.HasStats,
+		up:        resp.UpTotal,
+		down:      resp.DownTotal,
+		uprate:    resp.UpRate,
+		downrate:  resp.DownRate,
+	}
 }
 
 type heartbeatmsg struct{}
 
 func heartbeat() tea.Cmd {
 	return tea.Tick(20*time.Second, func(time.Time) tea.Msg { return heartbeatmsg{} })
-}
-
-func pingcmd() tea.Msg {
-	_, _ = ipc.Send(ipc.Request{Cmd: "ping"})
-	return nil
 }
 
 func addsubcmd(url string) tea.Cmd {
@@ -298,6 +319,13 @@ type Menu struct {
 	connecting   bool
 	flashat      time.Time
 	timerticking bool
+
+	hasstats  bool
+	uptotal   int64
+	downtotal int64
+	uprate    int64
+	downrate  int64
+	lastdrop  string
 
 	toasts []toast
 
@@ -422,9 +450,9 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.timerticking = false
 			return m, nil
 		}
-		return m, timertick()
+		return m, tea.Batch(timertick(), statuscmd)
 	case heartbeatmsg:
-		return m, tea.Batch(pingcmd, heartbeat())
+		return m, tea.Batch(statuscmd, heartbeat())
 	case subsloadedmsg:
 		m.panel.subs = msg.subs
 		m.panel.refresh()
@@ -486,13 +514,22 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		model, cmd := m.withtick(nil)
 		return model, tea.Batch(cmd, timer)
 	case statusmsg:
+		if !msg.live {
+			return m, nil
+		}
+		m.hasstats = msg.hasstats
+		m.uptotal, m.downtotal = msg.up, msg.down
+		m.uprate, m.downrate = msg.uprate, msg.downrate
 		if msg.mode != "" {
 			m.connmode = msg.mode
 		}
 		if msg.connected {
 			m.chosenurl, m.chosenidx = msg.url, msg.idx
 		}
-		if msg.connected && !m.connected && !m.connecting {
+		if m.connecting {
+			return m, nil
+		}
+		if msg.connected && !m.connected {
 			m.connected = true
 			m.revealing = false
 			m.reverse = false
@@ -501,6 +538,17 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.since = time.Now()
 			}
+		}
+		if !msg.connected && m.connected {
+			m.animconnect(false)
+			m.hasstats = false
+			if note := m.droptext(msg); note != "" && note != m.lastdrop {
+				m.lastdrop = note
+				m.pushtoast(toasterr, note)
+			}
+		}
+		if msg.connected {
+			m.lastdrop = ""
 		}
 		timer := m.starttimer()
 		model, cmd := m.withtick(nil)
@@ -879,8 +927,32 @@ func (m Menu) viewunit() (unit, logo, btn, mode string) {
 	logo = m.renderlogo()
 	btn = m.viewbtn()
 	mode = m.rendermode()
-	unit = lipgloss.JoinVertical(lipgloss.Center, logo, "", btn, "", mode)
+	unit = lipgloss.JoinVertical(lipgloss.Center, logo, "", btn, "", mode, "", m.viewstats())
 	return unit, logo, btn, mode
+}
+
+func (m Menu) viewstats() string {
+	if !m.connected || !m.hasstats {
+		return " "
+	}
+	return lipgloss.JoinHorizontal(
+		lipgloss.Center,
+		statsdown.Render("↓ "+humanrate(m.downrate)),
+		"   ",
+		statsup.Render("↑ "+humanrate(m.uprate)),
+		"   ",
+		statstotal.Render(humanbytes(m.uptotal+m.downtotal)),
+	)
+}
+
+func (m Menu) droptext(msg statusmsg) string {
+	if msg.code == "crashloop" {
+		return m.tr.ErrCrashLoop
+	}
+	if msg.err != "" {
+		return msg.err
+	}
+	return m.tr.ConnLost
 }
 
 func (m Menu) mouseupdate(msg tea.MouseMsg) (tea.Model, tea.Cmd) {

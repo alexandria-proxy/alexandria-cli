@@ -47,6 +47,9 @@ type Strings struct {
 	Copied         string
 	Dead           string
 	NotFound       string
+
+	ConnLost     string
+	ErrCrashLoop string
 }
 
 var table = map[string]Strings{
@@ -96,6 +99,9 @@ var table = map[string]Strings{
 		Copied:         "copied!",
 		Dead:           "dead",
 		NotFound:       "not found",
+
+		ConnLost:     "the connection dropped",
+		ErrCrashLoop: "the core keeps exiting — try another server",
 	},
 	"ru": {
 		ChooseLanguage: "Выберите язык",
@@ -144,6 +150,9 @@ var table = map[string]Strings{
 		Copied:         "скопировано!",
 		Dead:           "dead",
 		NotFound:       "не найдено",
+
+		ConnLost:     "соединение разорвано",
+		ErrCrashLoop: "ядро постоянно падает — попробуйте другой сервер",
 	},
 	"fa": {
 		ChooseLanguage: "زبان را انتخاب کنید",
@@ -192,6 +201,9 @@ var table = map[string]Strings{
 		Copied:         "کپی شد!",
 		Dead:           "dead",
 		NotFound:       "یافت نشد",
+
+		ConnLost:     "اتصال قطع شد",
+		ErrCrashLoop: "هسته مدام بسته می‌شود — سرور دیگری را امتحان کنید",
 	},
 }
 

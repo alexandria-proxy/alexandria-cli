@@ -958,6 +958,10 @@ func humanbytes(n int64) string {
 	}
 }
 
+func humanrate(n int64) string {
+	return humanbytes(n) + "/s"
+}
+
 func totallabel(n int64) string {
 	if n <= 0 {
 		return "∞"
