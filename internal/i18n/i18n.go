@@ -7,16 +7,19 @@ type Strings struct {
 	Connecting     string
 	Disconnect     string
 
-	ServersTitle string
-	SearchHint   string
-	Autoupdate   string
-	Expires      string
-	Updated      string
-	Used         string
-	Of           string
-	NoteLabel    string
-	NoSubs       string
-	AddSubHint   string
+	ServersTitle   string
+	SettingsTitle  string
+	AutostartLabel string
+	AutostartHint  string
+	SearchHint     string
+	Autoupdate     string
+	Expires        string
+	Updated        string
+	Used           string
+	Of             string
+	NoteLabel      string
+	NoSubs         string
+	AddSubHint     string
 
 	AddSubTitle      string
 	EditSubTitle     string
@@ -48,8 +51,10 @@ type Strings struct {
 	Dead           string
 	NotFound       string
 
-	ConnLost     string
-	ErrCrashLoop string
+	ConnLost         string
+	ErrCrashLoop     string
+	ErrAutostart     string
+	ErrAutostartRoot string
 }
 
 var table = map[string]Strings{
@@ -60,6 +65,9 @@ var table = map[string]Strings{
 		Connecting:     "Connecting…",
 		Disconnect:     "Disconnect",
 		ServersTitle:   "Servers",
+		SettingsTitle:  "Settings",
+		AutostartLabel: "Start on boot",
+		AutostartHint:  "launch alexandria when the system starts",
 		SearchHint:     "Type here to search",
 		Autoupdate:     "autoupdate",
 		Expires:        "expires",
@@ -100,8 +108,10 @@ var table = map[string]Strings{
 		Dead:           "dead",
 		NotFound:       "not found",
 
-		ConnLost:     "the connection dropped",
-		ErrCrashLoop: "the core keeps exiting — try another server",
+		ConnLost:         "the connection dropped",
+		ErrCrashLoop:     "the core keeps exiting — try another server",
+		ErrAutostart:     "couldn't change autostart",
+		ErrAutostartRoot: "autostart was set up system-wide — run alexandria with sudo to change it",
 	},
 	"ru": {
 		ChooseLanguage: "Выберите язык",
@@ -110,16 +120,19 @@ var table = map[string]Strings{
 		Connecting:     "Подключение…",
 		Disconnect:     "Отключиться",
 
-		ServersTitle: "Серверы",
-		SearchHint:   "Введите для поиска",
-		Autoupdate:   "автообновление",
-		Expires:      "истекает",
-		Updated:      "обновлено",
-		Used:         "использовано",
-		Of:           "из",
-		NoteLabel:    "заметка",
-		NoSubs:       "Подписки не найдены",
-		AddSubHint:   "Нажмите «ctrl + a» чтобы добавить",
+		ServersTitle:   "Серверы",
+		SettingsTitle:  "Настройки",
+		AutostartLabel: "Автозапуск при загрузке",
+		AutostartHint:  "запускать alexandria вместе с системой",
+		SearchHint:     "Введите для поиска",
+		Autoupdate:     "автообновление",
+		Expires:        "истекает",
+		Updated:        "обновлено",
+		Used:           "использовано",
+		Of:             "из",
+		NoteLabel:      "заметка",
+		NoSubs:         "Подписки не найдены",
+		AddSubHint:     "Нажмите «ctrl + a» чтобы добавить",
 
 		AddSubTitle:      "Добавление подписки",
 		EditSubTitle:     "Редактирование подписки",
@@ -151,8 +164,10 @@ var table = map[string]Strings{
 		Dead:           "dead",
 		NotFound:       "не найдено",
 
-		ConnLost:     "соединение разорвано",
-		ErrCrashLoop: "ядро постоянно падает — попробуйте другой сервер",
+		ConnLost:         "соединение разорвано",
+		ErrCrashLoop:     "ядро постоянно падает — попробуйте другой сервер",
+		ErrAutostart:     "не удалось изменить автозапуск",
+		ErrAutostartRoot: "автозапуск поставлен на всю систему — запустите alexandria через sudo, чтобы его изменить",
 	},
 	"fa": {
 		ChooseLanguage: "زبان را انتخاب کنید",
@@ -161,16 +176,19 @@ var table = map[string]Strings{
 		Connecting:     "در حال اتصال…",
 		Disconnect:     "قطع اتصال",
 
-		ServersTitle: "سرورها",
-		SearchHint:   "برای جستجو تایپ کنید",
-		Autoupdate:   "بروزرسانی خودکار",
-		Expires:      "انقضا",
-		Updated:      "بروزرسانی شده",
-		Used:         "استفاده شده",
-		Of:           "از",
-		NoteLabel:    "یادداشت",
-		NoSubs:       "اشتراکی یافت نشد",
-		AddSubHint:   "«ctrl + a» را برای افزودن بزنید",
+		ServersTitle:   "سرورها",
+		SettingsTitle:  "تنظیمات",
+		AutostartLabel: "اجرا هنگام روشن شدن",
+		AutostartHint:  "اجرای alexandria همراه با سیستم",
+		SearchHint:     "برای جستجو تایپ کنید",
+		Autoupdate:     "بروزرسانی خودکار",
+		Expires:        "انقضا",
+		Updated:        "بروزرسانی شده",
+		Used:           "استفاده شده",
+		Of:             "از",
+		NoteLabel:      "یادداشت",
+		NoSubs:         "اشتراکی یافت نشد",
+		AddSubHint:     "«ctrl + a» را برای افزودن بزنید",
 
 		AddSubTitle:      "افزودن اشتراک",
 		EditSubTitle:     "ویرایش اشتراک",
@@ -202,8 +220,10 @@ var table = map[string]Strings{
 		Dead:           "dead",
 		NotFound:       "یافت نشد",
 
-		ConnLost:     "اتصال قطع شد",
-		ErrCrashLoop: "هسته مدام بسته می‌شود — سرور دیگری را امتحان کنید",
+		ConnLost:         "اتصال قطع شد",
+		ErrCrashLoop:     "هسته مدام بسته می‌شود — سرور دیگری را امتحان کنید",
+		ErrAutostart:     "تغییر اجرای خودکار ناموفق بود",
+		ErrAutostartRoot: "اجرای خودکار برای کل سیستم تنظیم شده — برای تغییر، alexandria را با sudo اجرا کنید",
 	},
 }
 

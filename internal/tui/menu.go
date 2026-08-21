@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alexandria-proxy/alexandria-cli/internal/autostart"
 	"github.com/alexandria-proxy/alexandria-cli/internal/config"
 	"github.com/alexandria-proxy/alexandria-cli/internal/daemon"
 	"github.com/alexandria-proxy/alexandria-cli/internal/i18n"
@@ -61,6 +62,8 @@ const (
 	focusmode
 	focussearch
 	focusservers
+	focussettings
+	focusburger
 )
 
 type panelmode int
@@ -329,6 +332,14 @@ type Menu struct {
 
 	toasts []toast
 
+	draweropen  bool
+	drawerframe int
+	navidx      navid
+	navsect     navid
+	burgerhover bool
+	autostart   bool
+	setidx      int
+
 	chosenurl string
 	chosenidx int
 	pendurl   string
@@ -342,7 +353,18 @@ func NewMenu(lang, mode, mono, color string) Menu {
 	if mode != "tun" {
 		mode = "proxy"
 	}
-	return Menu{tr: tr, monocells: monocells, colorcells: colorcells, colorlogo: rendercells(colorcells), logow: w, panel: newserverspanel(tr), ticking: true, connmode: mode, chosenidx: -1, pendidx: -1}
+	return Menu{tr: tr, monocells: monocells, colorcells: colorcells, colorlogo: rendercells(colorcells), logow: w, panel: newserverspanel(tr), ticking: true, connmode: mode, autostart: autostart.Enabled(), chosenidx: -1, pendidx: -1}
+}
+
+func savelastcmd(url string, idx int) tea.Cmd {
+	return func() tea.Msg {
+		cfg, _ := config.Load()
+		if cfg.LastURL != url || cfg.LastSrv != idx {
+			cfg.LastURL, cfg.LastSrv = url, idx
+			_ = config.Save(cfg)
+		}
+		return nil
+	}
 }
 
 func savemodecmd(mode string) tea.Cmd {
@@ -354,6 +376,26 @@ func savemodecmd(mode string) tea.Cmd {
 		}
 		return nil
 	}
+}
+
+func (m *Menu) enterright() {
+	m.panel.focused = false
+	m.panel.serversfocused = false
+	m.panel.btnidx = -1
+	if m.navsect == navsettings {
+		m.focus = focussettings
+		m.setidx = 0
+		return
+	}
+	if m.panel.itemcount() > 0 {
+		m.focus = focusservers
+		m.panel.serversfocused = true
+		m.panel.cursor, m.panel.scroll = 0, 0
+		return
+	}
+	m.focus = focussearch
+	m.panel.focused = true
+	m.panel.search.focusend()
 }
 
 func (m *Menu) pickmode(mode string) tea.Cmd {
@@ -370,7 +412,7 @@ func (m Menu) Init() tea.Cmd {
 
 func (m Menu) tick() tea.Cmd {
 	d := idletick
-	if m.revealing || m.actionrunning || m.connecting {
+	if m.revealing || m.actionrunning || m.connecting || m.draweranimating() {
 		d = revealtick
 	}
 	return tea.Tick(d, func(time.Time) tea.Msg { return menutickmsg{} })
@@ -389,7 +431,7 @@ func (m *Menu) starttimer() tea.Cmd {
 }
 
 func (m Menu) animating() bool {
-	return m.revealing || m.connecting ||
+	return m.revealing || m.connecting || m.draweranimating() ||
 		m.focus == focussearch || m.mode == modeadd ||
 		(m.editordrag && m.editordragdir != 0) ||
 		m.actionrunning || m.flashlevel() > 0 || m.hastoasts()
@@ -433,6 +475,12 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.mode == modeedit && m.editordrag && m.editordragdir != 0 {
 			ew, eh := m.editordims()
 			m.editor.dragextend(m.editordragdir, ew, eh)
+		}
+		if m.draweropen && m.drawerframe < drawerframes {
+			m.drawerframe++
+		}
+		if !m.draweropen && m.drawerframe > 0 {
+			m.drawerframe--
 		}
 		if m.actionrunning && m.actiondone && time.Since(m.actionstart) >= busymin {
 			m.finishaction()
@@ -504,15 +552,26 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pushtoast(toasterr, msg.err)
 			return m.withtick(nil)
 		}
+		var save tea.Cmd
 		if msg.connected {
 			m.chosenurl, m.chosenidx = m.pendurl, m.pendidx
+			save = savelastcmd(m.pendurl, m.pendidx)
 		}
 		if msg.connected != m.connected {
 			m.animconnect(msg.connected)
 		}
 		timer := m.starttimer()
 		model, cmd := m.withtick(nil)
-		return model, tea.Batch(cmd, timer)
+		return model, tea.Batch(cmd, timer, save)
+	case autostartmsg:
+		m.autostart = msg.on
+		switch {
+		case msg.root:
+			m.pushtoast(toasterr, m.tr.ErrAutostartRoot)
+		case msg.err != "":
+			m.pushtoast(toasterr, m.tr.ErrAutostart+": "+msg.err)
+		}
+		return m.withtick(nil)
 	case statusmsg:
 		if !msg.live {
 			return m, nil
@@ -561,6 +620,13 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.editmouse(msg)
 			return m.withtick(nil)
 		}
+		if m.draweropen || m.drawerframe > 0 {
+			return m.mousedrawer(msg)
+		}
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft && m.hitburger(msg.X, msg.Y) {
+			return m.opendrawer()
+		}
+		m.burgerhover = m.hitburger(msg.X, msg.Y)
 		if m.mode == modeactions {
 			return m.mouseactions(msg)
 		}
@@ -580,6 +646,12 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.String() == "ctrl+c" {
 			return m, quitcmd
+		}
+		if m.draweropen {
+			return m.updatedrawer(msg)
+		}
+		if msg.String() == "ctrl+b" {
+			return m.opendrawer()
 		}
 		if m.mode == modeactions {
 			return m.updateactions(msg)
@@ -618,9 +690,30 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "ctrl+a" && m.focus != focussearch {
 			m.mode = modeadd
 			m.form = newaddform(m.tr)
+			m.navsect = navservers
 			m.focus = focusconnect
 			m.panel.focused = false
 			return m.withtick(nil)
+		}
+		if m.focus == focusburger {
+			switch msg.String() {
+			case "enter", " ", "right", "l":
+				return m.opendrawer()
+			case "down", "j", "tab":
+				m.enterright()
+				return m.withtick(nil)
+			case "left", "h", "esc":
+				m.focus = focusconnect
+				return m.withtick(nil)
+			}
+			return m, nil
+		}
+		if m.focus == focussettings {
+			if msg.String() == "up" && m.setidx == 0 {
+				m.focus = focusburger
+				return m.withtick(nil)
+			}
+			return m.updatesettings(msg)
 		}
 		if m.focus == focussearch {
 			switch msg.String() {
@@ -652,7 +745,7 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			case "up":
-				m.focus = focusmode
+				m.focus = focusburger
 				m.panel.focused = false
 				return m.withtick(nil)
 			case "left":
@@ -771,21 +864,16 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, m.pickmode(next)
 			case "down":
+				if m.navsect == navsettings {
+					m.enterright()
+					return m.withtick(nil)
+				}
 				m.focus = focussearch
 				m.panel.focused = true
 				m.panel.search.focusend()
 				return m.withtick(nil)
 			case "tab":
-				if m.panel.itemcount() > 0 {
-					m.focus = focusservers
-					m.panel.serversfocused = true
-					m.panel.cursor, m.panel.scroll = 0, 0
-					m.panel.btnidx = -1
-				} else {
-					m.focus = focussearch
-					m.panel.focused = true
-					m.panel.search.focusend()
-				}
+				m.enterright()
 				return m.withtick(nil)
 			}
 			return m, nil
@@ -794,19 +882,13 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "q", "esc":
 			return m, quitcmd
 		case "right", "tab":
-			if m.panel.itemcount() > 0 {
-				m.focus = focusservers
-				m.panel.serversfocused = true
-				m.panel.cursor, m.panel.scroll = 0, 0
-				m.panel.btnidx = -1
-			} else {
-				m.focus = focussearch
-				m.panel.focused = true
-				m.panel.search.focusend()
-			}
+			m.enterright()
 			return m.withtick(nil)
 		case "down":
 			m.focus = focusmode
+			return m.withtick(nil)
+		case "up":
+			m.focus = focusburger
 			return m.withtick(nil)
 		case "enter", " ":
 			if m.connecting {
@@ -1004,6 +1086,14 @@ func (m Menu) mouseupdate(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if msg.X >= panelx {
+		if m.navsect == navsettings {
+			if i := m.settingat(msg.X, msg.Y); i >= 0 {
+				m.focus = focussettings
+				m.setidx = i
+				return m.toggleseting(i)
+			}
+			return m, nil
+		}
 		return m.clickpanel(msg.Y-panely-1, msg.X)
 	}
 	return m, nil
@@ -1043,13 +1133,14 @@ func (m Menu) infolinkat(x, y int) int {
 	if m.width == 0 {
 		return -1
 	}
+	cw := m.contentw()
 	var fx0, fy0, formw int
 	if m.width < twocolmin {
 		unit, _, _, _ := m.viewunit()
-		fx0, fy0, formw = 0, lipgloss.Height(unit), m.width
+		fx0, fy0, formw = 0, lipgloss.Height(unit), cw
 	} else {
 		leftw := m.width / 2
-		fx0, fy0, formw = leftw, 0, m.width-leftw
+		fx0, fy0, formw = leftw, 0, cw-leftw
 	}
 	if x < fx0 {
 		return -1
@@ -1197,10 +1288,14 @@ func (m Menu) clickconnect() (tea.Model, tea.Cmd) {
 func (m Menu) panelgeom() (px, py, pw int) {
 	if m.width < twocolmin {
 		unit, _, _, _ := m.viewunit()
-		return 0, lipgloss.Height(unit), m.width
+		return 0, lipgloss.Height(unit), m.contentw()
 	}
 	leftw := m.width / 2
-	return leftw, 0, m.width - leftw
+	pw = m.contentw() - leftw
+	if pw < 1 {
+		pw = 1
+	}
+	return leftw, 0, pw
 }
 
 func panelusable(pw int) int {
@@ -1298,21 +1393,31 @@ func (m Menu) View() string {
 	}
 
 	flash := m.flashlevel()
+	cw := m.contentw()
 	if m.width < twocolmin {
 		top := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, unit)
-		content := m.panel.render(m.width, m.height-lipgloss.Height(unit), busyurl, busybtn, dropdown, anchorurl, flash, m.chosenurl, m.chosenidx)
+		content := m.panel.render(cw, m.height-lipgloss.Height(unit), busyurl, busybtn, dropdown, anchorurl, flash, m.chosenurl, m.chosenidx)
+		if m.navsect == navsettings {
+			content = m.rendersettings(cw)
+		}
 		if m.mode == modeadd {
-			content = m.form.render(m.width)
+			content = m.form.render(cw)
 		}
 		if m.mode == modeinfo {
-			content = m.info.render(m.width)
+			content = m.info.render(cw)
 		}
-		return m.withtoasts(lipgloss.JoinVertical(lipgloss.Left, top, content))
+		return m.withdrawer(m.withtoasts(lipgloss.JoinVertical(lipgloss.Left, top, content)))
 	}
 
 	leftw := m.width / 2
-	rightw := m.width - leftw
+	rightw := cw - leftw
+	if rightw < 1 {
+		rightw = 1
+	}
 	rightcontent := m.panel.render(rightw, m.height, busyurl, busybtn, dropdown, anchorurl, flash, m.chosenurl, m.chosenidx)
+	if m.navsect == navsettings {
+		rightcontent = m.rendersettings(rightw)
+	}
 	if m.mode == modeadd {
 		rightcontent = m.form.render(rightw)
 	}
@@ -1321,7 +1426,7 @@ func (m Menu) View() string {
 	}
 	left := lipgloss.Place(leftw, m.height, lipgloss.Center, lipgloss.Center, unit)
 	right := lipgloss.Place(rightw, m.height, lipgloss.Left, lipgloss.Top, rightcontent)
-	return m.withtoasts(lipgloss.JoinHorizontal(lipgloss.Top, left, right))
+	return m.withdrawer(m.withtoasts(lipgloss.JoinHorizontal(lipgloss.Top, left, right)))
 }
 
 func (m Menu) editmodalsize() (int, int) {
@@ -1733,7 +1838,10 @@ func (m Menu) rendereditmodal() string {
 }
 
 func (m Menu) searchwidth() int {
-	rightw := m.width - m.width/2
+	rightw := m.contentw()
+	if m.width >= twocolmin {
+		rightw -= m.width / 2
+	}
 	cw := rightw - 6
 	if cw < 1 {
 		cw = 1

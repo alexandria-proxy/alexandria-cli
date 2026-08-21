@@ -125,8 +125,8 @@ func (m Menu) withtoasts(view string) string {
 		return view
 	}
 	tw := 48
-	if tw > m.width-4 {
-		tw = m.width - 4
+	if cw := m.contentw(); tw > cw-4 {
+		tw = cw - 4
 	}
 	if tw < 10 {
 		return view
