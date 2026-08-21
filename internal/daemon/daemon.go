@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/alexandria-proxy/alexandria-cli/internal/config"
 	"github.com/alexandria-proxy/alexandria-cli/internal/ipc"
 	"github.com/alexandria-proxy/alexandria-cli/internal/subscription"
 )
@@ -72,7 +73,23 @@ func (s *state) findserver(url string, idx int) (subscription.Server, bool) {
 	return subscription.Server{}, false
 }
 
-func Run() error {
+func (s *state) autoconnect() {
+	cfg, err := config.Load()
+	if err != nil || cfg.LastURL == "" {
+		return
+	}
+	srv, ok := s.findserver(cfg.LastURL, cfg.LastSrv)
+	if !ok {
+		return
+	}
+	mode := cfg.Mode
+	if mode != "tun" {
+		mode = "proxy"
+	}
+	s.conn.connect(srv, cfg.LastURL, cfg.LastSrv, mode)
+}
+
+func Run(autoconnect bool) error {
 	setprocname("alexad")
 
 	path, err := ipc.SocketPath()
@@ -94,6 +111,10 @@ func Run() error {
 	defer ln.Close()
 
 	go s.idlewatch()
+
+	if autoconnect {
+		s.autoconnect()
+	}
 
 	pid := pidpath()
 	_ = os.WriteFile(pid, []byte(strconv.Itoa(os.Getpid())), 0600)

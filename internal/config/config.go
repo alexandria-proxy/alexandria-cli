@@ -7,8 +7,10 @@ import (
 )
 
 type Config struct {
-	Lang string `json:"lang"`
-	Mode string `json:"mode"`
+	Lang    string `json:"lang"`
+	Mode    string `json:"mode"`
+	LastURL string `json:"lasturl,omitempty"`
+	LastSrv int    `json:"lastsrv,omitempty"`
 }
 
 func dir() (string, error) {
