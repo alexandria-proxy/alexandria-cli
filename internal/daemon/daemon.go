@@ -18,7 +18,13 @@ import (
 	"github.com/alexandria-proxy/alexandria-cli/internal/subscription"
 )
 
-const idletimeout = 60 * time.Second
+const (
+	idletimeout = 60 * time.Second
+	waketick    = 5 * time.Second
+	wakegap     = 25 * time.Second
+	waketries   = 3
+	wakedelay   = 2 * time.Second
+)
 
 type state struct {
 	mu       sync.Mutex
@@ -58,6 +64,52 @@ func (s *state) idlewatch() {
 				s.quitonce.Do(func() { close(s.quit) })
 				return
 			}
+		}
+	}
+}
+
+func (s *state) wakewatch() {
+	last := time.Now().Round(0)
+	t := time.NewTicker(waketick)
+	defer t.Stop()
+	for {
+		select {
+		case <-s.quit:
+			return
+		case <-t.C:
+			now := time.Now().Round(0)
+			gap := now.Sub(last)
+			last = now
+			if gap > wakegap {
+				s.wake()
+			}
+		}
+	}
+}
+
+func (s *state) wake() {
+	s.conn.mu.Lock()
+	live, url, idx, mode := s.conn.connected, s.conn.url, s.conn.srvidx, s.conn.mode
+	s.conn.mu.Unlock()
+	if !live {
+		return
+	}
+	srv, ok := s.findserver(url, idx)
+	if !ok {
+		return
+	}
+	s.conn.setrestarting(true)
+	defer s.conn.setrestarting(false)
+	for i := 0; i < waketries; i++ {
+		if i > 0 {
+			select {
+			case <-s.quit:
+				return
+			case <-time.After(wakedelay):
+			}
+		}
+		if resp := s.conn.connect(srv, url, idx, mode); resp.Error == "" {
+			return
 		}
 	}
 }
@@ -111,6 +163,7 @@ func Run(autoconnect bool) error {
 	defer ln.Close()
 
 	go s.idlewatch()
+	go s.wakewatch()
 
 	if autoconnect {
 		s.autoconnect()

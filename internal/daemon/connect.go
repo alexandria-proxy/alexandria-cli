@@ -24,19 +24,20 @@ type proc struct {
 }
 
 type conn struct {
-	mu        sync.Mutex
-	wg        sync.WaitGroup
-	cmds      map[string]*exec.Cmd
-	connected bool
-	url       string
-	srvidx    int
-	mode      string
-	since     time.Time
-	lasterr   string
-	lastcode  string
-	metrics   int
-	stop      chan struct{}
-	stats     stattrack
+	mu         sync.Mutex
+	wg         sync.WaitGroup
+	cmds       map[string]*exec.Cmd
+	connected  bool
+	restarting bool
+	url        string
+	srvidx     int
+	mode       string
+	since      time.Time
+	lasterr    string
+	lastcode   string
+	metrics    int
+	stop       chan struct{}
+	stats      stattrack
 }
 
 func cfgfile(name string) (string, error) {
@@ -109,14 +110,21 @@ func (c *conn) isconnected() bool {
 	return c.connected
 }
 
+func (c *conn) setrestarting(v bool) {
+	c.mu.Lock()
+	c.restarting = v
+	c.mu.Unlock()
+}
+
 func (c *conn) status() ipc.Response {
 	c.mu.Lock()
-	r := ipc.Response{OK: true, Connected: c.connected, Mode: c.mode, Error: c.lasterr, Code: c.lastcode}
-	if c.connected {
+	live := c.connected || c.restarting
+	r := ipc.Response{OK: true, Connected: live, Mode: c.mode, Error: c.lasterr, Code: c.lastcode}
+	if live {
 		r.ActiveURL, r.ActiveSrv = c.url, c.srvidx
 		r.Since = c.since.Unix()
 	}
-	live, metrics := c.connected, c.metrics
+	metrics := c.metrics
 	c.mu.Unlock()
 
 	if live && metrics > 0 {

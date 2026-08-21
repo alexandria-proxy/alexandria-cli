@@ -34,6 +34,8 @@ const (
 	flashdur = 2 * time.Second
 
 	twocolmin = 96
+
+	deadlimit = 3
 )
 
 var (
@@ -323,6 +325,7 @@ type Menu struct {
 	flashat      time.Time
 	timerticking bool
 
+	deadpolls int
 	hasstats  bool
 	uptotal   int64
 	downtotal int64
@@ -574,8 +577,16 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.withtick(nil)
 	case statusmsg:
 		if !msg.live {
-			return m, nil
+			m.deadpolls++
+			if m.deadpolls < deadlimit || !m.connected || m.connecting {
+				return m, nil
+			}
+			m.animconnect(false)
+			m.hasstats = false
+			m.pushtoast(toasterr, m.tr.ConnLost)
+			return m.withtick(nil)
 		}
+		m.deadpolls = 0
 		m.hasstats = msg.hasstats
 		m.uptotal, m.downtotal = msg.up, msg.down
 		m.uprate, m.downrate = msg.uprate, msg.downrate
