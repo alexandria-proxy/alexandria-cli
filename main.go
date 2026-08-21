@@ -12,7 +12,7 @@ import (
 	"github.com/alexandria-proxy/alexandria-cli/internal/tui"
 )
 
-var version = "0.0.10"
+var version = "0.0.11"
 
 //go:embed core/manifest.json
 var coremanifest []byte
@@ -38,6 +38,7 @@ var menulogocolor string
 
 func main() {
 	daemonmode := flag.Bool("daemon", false, "run the background daemon (internal use)")
+	autoconnect := flag.Bool("autoconnect", false, "connect to the last used server on start (internal use)")
 	showversion := flag.Bool("version", false, "print version and bail")
 	flag.Parse()
 
@@ -47,7 +48,7 @@ func main() {
 	}
 
 	if *daemonmode || os.Getenv("ALEXANDRIA_DAEMON") == "1" {
-		if err := daemon.Run(); err != nil {
+		if err := daemon.Run(*autoconnect); err != nil {
 			fmt.Fprintln(os.Stderr, "daemon:", err)
 			os.Exit(1)
 		}
