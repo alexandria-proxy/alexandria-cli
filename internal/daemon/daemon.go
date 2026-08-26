@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,6 +25,12 @@ const (
 	wakegap     = 25 * time.Second
 	waketries   = 3
 	wakedelay   = 2 * time.Second
+
+	bootwindow   = 3 * time.Minute
+	bootretry    = 5 * time.Second
+	fetchgrace   = 20 * time.Second
+	pinggrace    = 10 * time.Second
+	fastesttries = 3
 )
 
 type state struct {
@@ -125,20 +132,161 @@ func (s *state) findserver(url string, idx int) (subscription.Server, bool) {
 	return subscription.Server{}, false
 }
 
+// autoconnect is the boot path: refresh the sub, ping everything, take the
+// quickest server. Network is usually still coming up at boot, so we keep
+// retrying until the deadline and only then fall back to the last used server.
 func (s *state) autoconnect() {
 	cfg, err := config.Load()
-	if err != nil || cfg.LastURL == "" {
-		return
-	}
-	srv, ok := s.findserver(cfg.LastURL, cfg.LastSrv)
-	if !ok {
+	if err != nil {
 		return
 	}
 	mode := cfg.Mode
 	if mode != "tun" {
 		mode = "proxy"
 	}
-	s.conn.connect(srv, cfg.LastURL, cfg.LastSrv, mode)
+	url := cfg.LastURL
+	if url == "" {
+		url = s.firstsub()
+	}
+	if url == "" {
+		return
+	}
+
+	deadline := time.Now().Add(bootwindow)
+	for {
+		s.touch()
+		if s.conn.isconnected() {
+			return
+		}
+		s.refreshsub(url)
+		if s.connectfastest(url, mode) {
+			return
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+		select {
+		case <-s.quit:
+			return
+		case <-time.After(bootretry):
+		}
+	}
+
+	if s.conn.isconnected() {
+		return
+	}
+	if srv, ok := s.findserver(url, cfg.LastSrv); ok {
+		s.conn.connect(srv, url, cfg.LastSrv, mode)
+	}
+}
+
+func (s *state) firstsub() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.subs) == 0 {
+		return ""
+	}
+	return s.subs[0].URL
+}
+
+func (s *state) refreshsub(url string) {
+	ctx, cancel := context.WithTimeout(context.Background(), fetchgrace)
+	defer cancel()
+
+	sub, err := subscription.Fetch(ctx, url)
+	if err != nil || len(sub.Servers) == 0 {
+		return
+	}
+
+	s.mu.Lock()
+	for i := range s.subs {
+		if s.subs[i].URL == sub.URL {
+			s.subs[i] = subscription.Merge(s.subs[i], sub)
+			break
+		}
+	}
+	subscription.Sort(s.subs)
+	snapshot := append([]subscription.Subscription(nil), s.subs...)
+	s.mu.Unlock()
+
+	_ = subscription.SaveAll(snapshot)
+}
+
+// connectfastest pings the whole sub and walks the servers in ping order, so a
+// dead-but-quick box doesn't leave us offline.
+func (s *state) connectfastest(url, mode string) bool {
+	order := s.pingorder(url)
+	tries := 0
+	for _, idx := range order {
+		srv, ok := s.findserver(url, idx)
+		if !ok {
+			continue
+		}
+		if resp := s.conn.connect(srv, url, idx, mode); resp.Error == "" {
+			savelast(url, idx)
+			return true
+		}
+		s.touch()
+		if tries++; tries >= fastesttries {
+			break
+		}
+	}
+	return false
+}
+
+func (s *state) pingorder(url string) []int {
+	s.mu.Lock()
+	var servers []subscription.Server
+	for i := range s.subs {
+		if s.subs[i].URL == url {
+			servers = append([]subscription.Server(nil), s.subs[i].Servers...)
+			break
+		}
+	}
+	s.mu.Unlock()
+	if len(servers) == 0 {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), pinggrace)
+	probe := subscription.Subscription{Servers: servers}
+	subscription.Ping(ctx, &probe)
+	cancel()
+
+	s.mu.Lock()
+	for i := range s.subs {
+		if s.subs[i].URL == url && len(s.subs[i].Servers) == len(probe.Servers) {
+			s.subs[i].Servers = probe.Servers
+			break
+		}
+	}
+	snapshot := append([]subscription.Subscription(nil), s.subs...)
+	s.mu.Unlock()
+
+	_ = subscription.SaveAll(snapshot)
+
+	var order []int
+	for i := range probe.Servers {
+		if probe.Servers[i].PingMs > 0 {
+			order = append(order, i)
+		}
+	}
+	sort.SliceStable(order, func(a, b int) bool {
+		return probe.Servers[order[a]].PingMs < probe.Servers[order[b]].PingMs
+	})
+	return order
+}
+
+func savelast(url string, idx int) {
+	cfg, err := config.Load()
+	if err != nil || cfg.LastURL == "" {
+		return
+	}
+	if cfg.LastURL == url && cfg.LastSrv == idx {
+		return
+	}
+	cfg.LastURL, cfg.LastSrv = url, idx
+	_ = config.Save(cfg)
 }
 
 func Run(autoconnect bool) error {
@@ -166,7 +314,7 @@ func Run(autoconnect bool) error {
 	go s.wakewatch()
 
 	if autoconnect {
-		s.autoconnect()
+		go s.autoconnect()
 	}
 
 	pid := pidpath()
