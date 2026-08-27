@@ -105,7 +105,7 @@ func unitfile(exe string, system bool) string {
 	b := &strings.Builder{}
 	b.WriteString("[Unit]\nDescription=Alexandria proxy\n")
 	if system {
-		b.WriteString("After=network-online.target\nWants=network-online.target\n")
+		b.WriteString("After=network.target\n")
 	}
 	b.WriteString("\n[Service]\nType=simple\n")
 	if system {
