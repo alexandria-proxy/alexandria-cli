@@ -270,7 +270,7 @@ var table = map[string]Strings{
 		LblNoDupes:     "Ignore duplicates",
 		NoteNoDupes:    "Hides servers already in the list.",
 		LblSendHWID:    "Send HWID",
-		NoteHWID:       "Sends X-Device-Name, X-Device-Os and X-Hwid. The id comes from the system and can't be changed.",
+		NoteHWID:       "Sends X-Hwid, X-Device-Os and X-Device-Model. The id comes from the system and can't be changed.",
 		NoteUserAgent:  "Clear the field to use the default.",
 
 		LblLocalDNS:    "Use local DNS",
@@ -441,7 +441,7 @@ var table = map[string]Strings{
 		LblNoDupes:     "Игнорировать дубликаты",
 		NoteNoDupes:    "Скрывает серверы, которые уже есть в списке.",
 		LblSendHWID:    "Отправлять HWID",
-		NoteHWID:       "Отправляет X-Device-Name, X-Device-Os и X-Hwid. Идентификатор берётся из системы и не меняется.",
+		NoteHWID:       "Отправляет X-Hwid, X-Device-Os и X-Device-Model. Идентификатор берётся из системы и не меняется.",
 		NoteUserAgent:  "Очистите поле, чтобы вернуть значение по умолчанию.",
 
 		LblLocalDNS:    "Использовать локальный DNS",
@@ -612,7 +612,7 @@ var table = map[string]Strings{
 		LblNoDupes:     "نادیده گرفتن تکراری‌ها",
 		NoteNoDupes:    "سرورهایی که از قبل در فهرست هستند را پنهان می‌کند.",
 		LblSendHWID:    "ارسال HWID",
-		NoteHWID:       "X-Device-Name، X-Device-Os و X-Hwid را می‌فرستد. شناسه از سیستم می‌آید و تغییر نمی‌کند.",
+		NoteHWID:       "X-Hwid، X-Device-Os و X-Device-Model را می‌فرستد. شناسه از سیستم می‌آید و تغییر نمی‌کند.",
 		NoteUserAgent:  "برای بازگشت به پیش‌فرض، فیلد را خالی کنید.",
 
 		LblLocalDNS:    "استفاده از DNS محلی",
