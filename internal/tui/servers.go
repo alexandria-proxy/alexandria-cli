@@ -3,6 +3,8 @@ package tui
 import (
 	"fmt"
 	"math"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -103,6 +105,57 @@ type serverspanel struct {
 	serversfocused bool
 	collapsed      map[string]bool
 	ss             searchstate
+	order          [][]int
+	sortby         string
+	nodupes        bool
+}
+
+func (p serverspanel) rows(si int) []int {
+	if si >= 0 && si < len(p.order) {
+		return p.order[si]
+	}
+	idx := make([]int, len(p.subs[si].Servers))
+	for i := range idx {
+		idx[i] = i
+	}
+	return idx
+}
+
+func (p *serverspanel) reorder() {
+	seen := make(map[string]bool)
+	p.order = make([][]int, len(p.subs))
+	for si := range p.subs {
+		servers := p.subs[si].Servers
+		idx := make([]int, 0, len(servers))
+		for ri, srv := range servers {
+			if p.nodupes && srv.Host != "" {
+				key := srv.Protocol + "|" + srv.Host + "|" + strconv.Itoa(srv.Port)
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+			}
+			idx = append(idx, ri)
+		}
+		switch p.sortby {
+		case "alpha":
+			sort.SliceStable(idx, func(a, b int) bool {
+				return strings.ToLower(servers[idx[a]].Name) < strings.ToLower(servers[idx[b]].Name)
+			})
+		case "ping":
+			sort.SliceStable(idx, func(a, b int) bool {
+				return pingrank(servers[idx[a]].PingMs) < pingrank(servers[idx[b]].PingMs)
+			})
+		}
+		p.order[si] = idx
+	}
+}
+
+func pingrank(ms int) int {
+	if ms <= 0 {
+		return 1 << 30
+	}
+	return ms
 }
 
 func substrmatch(text, lowerq string) span {
@@ -200,6 +253,7 @@ func (p serverspanel) computesearch() searchstate {
 }
 
 func (p *serverspanel) refresh() {
+	p.reorder()
 	p.ss = p.computesearch()
 }
 
@@ -246,12 +300,12 @@ type selitem struct {
 
 func (p serverspanel) items() []selitem {
 	items := make([]selitem, 0, p.itemcount())
-	for si, sub := range p.subs {
+	for si := range p.subs {
 		items = append(items, selitem{si, -1})
 		if p.collapsedAt(si) {
 			continue
 		}
-		for ri := range sub.Servers {
+		for _, ri := range p.rows(si) {
 			items = append(items, selitem{si, ri})
 		}
 	}
@@ -294,7 +348,7 @@ func (p serverspanel) hittest(row, scroll int) (int, string, int) {
 		y += h
 		idx++
 		if !p.collapsedAt(si) {
-			for range sub.Servers {
+			for range p.rows(si) {
 				if target < y+3 {
 					return idx, "server", target - y
 				}
@@ -317,7 +371,7 @@ func (p serverspanel) listrow(url string) (int, bool) {
 		}
 		y += p.subcardheight(sub)
 		if !p.collapsedAt(si) {
-			y += 3 * len(sub.Servers)
+			y += 3 * len(p.rows(si))
 		}
 	}
 	return 0, false
@@ -337,7 +391,7 @@ func (p serverspanel) itemspan(idx int) (int, int) {
 		y += h
 		i++
 		if !p.collapsedAt(si) {
-			for range sub.Servers {
+			for range p.rows(si) {
 				if i == idx {
 					return y, 3
 				}
@@ -357,7 +411,7 @@ func (p serverspanel) listheight() int {
 		}
 		y += p.subcardheight(sub)
 		if !p.collapsedAt(si) {
-			y += 3 * len(sub.Servers)
+			y += 3 * len(p.rows(si))
 		}
 	}
 	return y
@@ -487,7 +541,8 @@ func (p serverspanel) render(width, height int, busyurl string, busybtn int, dro
 
 		if !collapsed {
 			var rows []string
-			for ri, srv := range sub.Servers {
+			for _, ri := range p.rows(si) {
+				srv := sub.Servers[ri]
 				srvsel := p.serversfocused && sel.subidx == si && sel.srvidx == ri
 				chosen := sub.URL == chosenurl && ri == chosenidx
 				srvghost, srvsp := p.servermatch(sm, ri)

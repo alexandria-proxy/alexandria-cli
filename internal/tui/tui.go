@@ -2,6 +2,8 @@ package tui
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/alexandria-proxy/alexandria-cli/internal/config"
 )
 
 func RunLangPicker(logo string) (string, error) {
@@ -12,7 +14,7 @@ func RunLangPicker(logo string) (string, error) {
 	return final.(LangPicker).Chosen(), nil
 }
 
-func RunMenu(lang, mode, mono, color string) error {
-	_, err := tea.NewProgram(NewMenu(lang, mode, mono, color), tea.WithAltScreen(), tea.WithMouseAllMotion()).Run()
+func RunMenu(cfg config.Config, mono, color string) error {
+	_, err := tea.NewProgram(NewMenu(cfg, mono, color), tea.WithAltScreen(), tea.WithMouseAllMotion()).Run()
 	return err
 }

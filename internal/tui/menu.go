@@ -65,6 +65,7 @@ const (
 	focussearch
 	focusservers
 	focussettings
+	focuslogs
 	focusburger
 )
 
@@ -341,7 +342,22 @@ type Menu struct {
 	navsect     navid
 	burgerhover bool
 	autostart   bool
+
+	cfg         config.Config
+	localip     string
+	setscr      setscreen
 	setidx      int
+	setpos      [6]int
+	setscroll   int
+	setsearch   textinput
+	setsearchon bool
+	setopen     bool
+	setoptcur   int
+	setinput    textinput
+	setinputkey string
+	setconfirm  string
+
+	logs logview
 
 	chosenurl string
 	chosenidx int
@@ -349,14 +365,51 @@ type Menu struct {
 	pendidx   int
 }
 
-func NewMenu(lang, mode, mono, color string) Menu {
+func NewMenu(cfg config.Config, mono, color string) Menu {
 	monocells, w := parselogo(mono)
 	colorcells, _ := parselogo(color)
-	tr := i18n.T(lang)
-	if mode != "tun" {
-		mode = "proxy"
+	tr := i18n.T(cfg.Lang)
+	if cfg.Mode != "tun" {
+		cfg.Mode = "proxy"
 	}
-	return Menu{tr: tr, monocells: monocells, colorcells: colorcells, colorlogo: rendercells(colorcells), logow: w, panel: newserverspanel(tr), ticking: true, connmode: mode, autostart: autostart.Enabled(), chosenidx: -1, pendidx: -1}
+	panel := newserverspanel(tr)
+	panel.sortby = cfg.Settings.Subs.SortBy
+	panel.nodupes = cfg.Settings.Subs.NoDupes
+
+	m := Menu{
+		tr:         tr,
+		cfg:        cfg,
+		monocells:  monocells,
+		colorcells: colorcells,
+		colorlogo:  rendercells(colorcells),
+		logow:      w,
+		panel:      panel,
+		ticking:    true,
+		connmode:   cfg.Mode,
+		autostart:  autostart.Enabled(),
+		chosenidx:  -1,
+		pendidx:    -1,
+		localip:    localip(),
+		logs:       newlogview(),
+	}
+	m.firstfocus()
+	return m
+}
+
+func resetcmd(kind string) tea.Cmd {
+	return func() tea.Msg {
+		if err := daemon.Ensure(); err != nil {
+			return resetmsg{kind: kind, err: err.Error()}
+		}
+		resp, err := ipc.Send(ipc.Request{Cmd: "reset", Kind: kind})
+		if err != nil {
+			return resetmsg{kind: kind, err: err.Error()}
+		}
+		if !resp.OK {
+			return resetmsg{kind: kind, err: resp.Error}
+		}
+		return resetmsg{kind: kind}
+	}
 }
 
 func savelastcmd(url string, idx int) tea.Cmd {
@@ -387,7 +440,16 @@ func (m *Menu) enterright() {
 	m.panel.btnidx = -1
 	if m.navsect == navsettings {
 		m.focus = focussettings
-		m.setidx = 0
+		m.setsearchon = false
+		m.setopen = false
+		m.setconfirm = ""
+		m.restorefocus()
+		return
+	}
+	if m.navsect == navlogs {
+		m.focus = focuslogs
+		m.logs.filteron = true
+		m.logs.filter.focusend()
 		return
 	}
 	if m.panel.itemcount() > 0 {
@@ -410,7 +472,42 @@ func (m *Menu) pickmode(mode string) tea.Cmd {
 }
 
 func (m Menu) Init() tea.Cmd {
-	return tea.Batch(tea.HideCursor, m.tick(), loadsubscmd, statuscmd, heartbeat())
+	cmds := []tea.Cmd{tea.HideCursor, m.tick(), loadsubscmd, statuscmd, heartbeat(), logstick()}
+	if m.cfg.Settings.Subs.UpdateOpen || m.cfg.Settings.Subs.PingOpen || m.cfg.Settings.Subs.ConnectOpen {
+		cmds = append(cmds, onopencmd(m.cfg))
+	}
+	return tea.Batch(cmds...)
+}
+
+func onopencmd(cfg config.Config) tea.Cmd {
+	return func() tea.Msg {
+		if err := daemon.Ensure(); err != nil {
+			return nil
+		}
+		subs := ipc.Response{}
+		if cfg.Settings.Subs.UpdateOpen || cfg.Settings.Subs.PingOpen {
+			resp, err := ipc.Send(ipc.Request{Cmd: "list"})
+			if err != nil {
+				return nil
+			}
+			subs = resp
+			for _, sub := range resp.Subscriptions {
+				if cfg.Settings.Subs.UpdateOpen {
+					subs, _ = ipc.Send(ipc.Request{Cmd: "add_subscription", URL: sub.URL})
+				}
+				if cfg.Settings.Subs.PingOpen {
+					subs, _ = ipc.Send(ipc.Request{Cmd: "ping_subscription", URL: sub.URL})
+				}
+			}
+		}
+		if cfg.Settings.Subs.ConnectOpen && cfg.LastURL != "" {
+			_, _ = ipc.Send(ipc.Request{Cmd: "connect", URL: cfg.LastURL, SrvIdx: cfg.LastSrv, Mode: cfg.Mode})
+		}
+		if len(subs.Subscriptions) > 0 {
+			return subsloadedmsg{subs: subs.Subscriptions}
+		}
+		return nil
+	}
 }
 
 func (m Menu) tick() tea.Cmd {
@@ -435,9 +532,19 @@ func (m *Menu) starttimer() tea.Cmd {
 
 func (m Menu) animating() bool {
 	return m.revealing || m.connecting || m.draweranimating() ||
-		m.focus == focussearch || m.mode == modeadd ||
+		m.focus == focussearch || m.mode == modeadd || m.editingsetting() ||
 		(m.editordrag && m.editordragdir != 0) ||
 		m.actionrunning || m.flashlevel() > 0 || m.hastoasts()
+}
+
+func (m Menu) editingsetting() bool {
+	if m.focus == focuslogs {
+		return m.logs.filteron
+	}
+	if m.focus != focussettings {
+		return false
+	}
+	return m.setsearchon || m.setinputkey != ""
 }
 
 func (m Menu) flashlevel() float64 {
@@ -566,6 +673,38 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		timer := m.starttimer()
 		model, cmd := m.withtick(nil)
 		return model, tea.Batch(cmd, timer, save)
+	case logtickmsg:
+		if m.navsect != navlogs {
+			return m, logstick()
+		}
+		return m, tea.Batch(logstick(), logscmd(m.logs.seq))
+	case logsmsg:
+		m.logs.absorb(msg)
+		m.tailfollow()
+		return m.withtick(nil)
+	case resetmsg:
+		if msg.err != "" {
+			m.pushtoast(toasterr, m.tr.ErrReset+": "+msg.err)
+			return m.withtick(nil)
+		}
+		if cfg, err := config.Load(); err == nil {
+			lang := m.cfg.Lang
+			m.cfg = cfg
+			if cfg.Lang == "" {
+				m.cfg.Lang = lang
+			}
+			m.panel.sortby = m.cfg.Settings.Subs.SortBy
+			m.panel.nodupes = m.cfg.Settings.Subs.NoDupes
+		}
+		if msg.kind == "user" {
+			m.panel.subs = nil
+			m.panel.collapsed = map[string]bool{}
+			m.panel.refresh()
+			m.chosenurl, m.chosenidx = "", -1
+		}
+		m.firstfocus()
+		m.pushtoast(toastok, m.tr.OkReset)
+		return m.withtick(nil)
 	case autostartmsg:
 		m.autostart = msg.on
 		switch {
@@ -631,6 +770,9 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.editmouse(msg)
 			return m.withtick(nil)
 		}
+		if m.setconfirm != "" {
+			return m.mousesetconfirm(msg)
+		}
 		if m.draweropen || m.drawerframe > 0 {
 			return m.mousedrawer(msg)
 		}
@@ -657,6 +799,9 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.String() == "ctrl+c" {
 			return m, quitcmd
+		}
+		if m.setconfirm != "" {
+			return m.updateconfirm(msg)
 		}
 		if m.draweropen {
 			return m.updatedrawer(msg)
@@ -720,11 +865,10 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.focus == focussettings {
-			if msg.String() == "up" && m.setidx == 0 {
-				m.focus = focusburger
-				return m.withtick(nil)
-			}
 			return m.updatesettings(msg)
+		}
+		if m.focus == focuslogs {
+			return m.updatelogs(msg)
 		}
 		if m.focus == focussearch {
 			switch msg.String() {
@@ -861,12 +1005,19 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "ctrl+c", "q":
 				return m, quitcmd
-			case "esc", "up":
+			case "esc", "up", "k":
 				m.focus = focusconnect
 				return m.withtick(nil)
 			case "left", "h":
+				if m.connmode == "proxy" {
+					return m, nil
+				}
 				return m, m.pickmode("proxy")
 			case "right", "l":
+				if m.connmode == "tun" {
+					m.enterright()
+					return m.withtick(nil)
+				}
 				return m, m.pickmode("tun")
 			case "enter", " ":
 				next := "tun"
@@ -874,8 +1025,8 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					next = "proxy"
 				}
 				return m, m.pickmode(next)
-			case "down":
-				if m.navsect == navsettings {
+			case "down", "j":
+				if m.navsect != navservers {
 					m.enterright()
 					return m.withtick(nil)
 				}
@@ -892,13 +1043,13 @@ func (m Menu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c", "q", "esc":
 			return m, quitcmd
-		case "right", "tab":
+		case "right", "l", "tab":
 			m.enterright()
 			return m.withtick(nil)
-		case "down":
+		case "down", "j":
 			m.focus = focusmode
 			return m.withtick(nil)
-		case "up":
+		case "up", "k":
 			m.focus = focusburger
 			return m.withtick(nil)
 		case "enter", " ":
@@ -1098,12 +1249,10 @@ func (m Menu) mouseupdate(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 	if msg.X >= panelx {
 		if m.navsect == navsettings {
-			if i := m.settingat(msg.X, msg.Y); i >= 0 {
-				m.focus = focussettings
-				m.setidx = i
-				return m.toggleseting(i)
-			}
-			return m, nil
+			return m.clicksetting(msg.X, msg.Y)
+		}
+		if m.navsect == navlogs {
+			return m.clicklogs(msg.X, msg.Y)
 		}
 		return m.clickpanel(msg.Y-panely-1, msg.X)
 	}
@@ -1369,6 +1518,12 @@ func (m Menu) clickpanel(row, cx int) (tea.Model, tea.Cmd) {
 }
 
 func (m Menu) wheelmove(dir int) (tea.Model, tea.Cmd) {
+	if m.navsect == navsettings {
+		return m.setwheel(dir)
+	}
+	if m.navsect == navlogs {
+		return m.logwheel(dir)
+	}
 	if m.panel.itemcount() == 0 {
 		return m, nil
 	}
@@ -1407,9 +1562,13 @@ func (m Menu) View() string {
 	cw := m.contentw()
 	if m.width < twocolmin {
 		top := lipgloss.PlaceHorizontal(m.width, lipgloss.Center, unit)
-		content := m.panel.render(cw, m.height-lipgloss.Height(unit), busyurl, busybtn, dropdown, anchorurl, flash, m.chosenurl, m.chosenidx)
+		panelh := m.height - lipgloss.Height(unit)
+		content := m.panel.render(cw, panelh, busyurl, busybtn, dropdown, anchorurl, flash, m.chosenurl, m.chosenidx)
 		if m.navsect == navsettings {
-			content = m.rendersettings(cw)
+			content = m.rendersettings(cw, panelh)
+		}
+		if m.navsect == navlogs {
+			content = m.renderlogs(cw, panelh)
 		}
 		if m.mode == modeadd {
 			content = m.form.render(cw)
@@ -1417,7 +1576,7 @@ func (m Menu) View() string {
 		if m.mode == modeinfo {
 			content = m.info.render(cw)
 		}
-		return m.withdrawer(m.withtoasts(lipgloss.JoinVertical(lipgloss.Left, top, content)))
+		return m.overlayconfirm(m.withdrawer(m.withtoasts(lipgloss.JoinVertical(lipgloss.Left, top, content))))
 	}
 
 	leftw := m.width / 2
@@ -1427,7 +1586,10 @@ func (m Menu) View() string {
 	}
 	rightcontent := m.panel.render(rightw, m.height, busyurl, busybtn, dropdown, anchorurl, flash, m.chosenurl, m.chosenidx)
 	if m.navsect == navsettings {
-		rightcontent = m.rendersettings(rightw)
+		rightcontent = m.rendersettings(rightw, m.height)
+	}
+	if m.navsect == navlogs {
+		rightcontent = m.renderlogs(rightw, m.height)
 	}
 	if m.mode == modeadd {
 		rightcontent = m.form.render(rightw)
@@ -1437,7 +1599,17 @@ func (m Menu) View() string {
 	}
 	left := lipgloss.Place(leftw, m.height, lipgloss.Center, lipgloss.Center, unit)
 	right := lipgloss.Place(rightw, m.height, lipgloss.Left, lipgloss.Top, rightcontent)
-	return m.withdrawer(m.withtoasts(lipgloss.JoinHorizontal(lipgloss.Top, left, right)))
+	return m.overlayconfirm(m.withdrawer(m.withtoasts(lipgloss.JoinHorizontal(lipgloss.Top, left, right))))
+}
+
+func (m Menu) overlayconfirm(view string) string {
+	if m.setconfirm == "" || m.width == 0 || m.height == 0 {
+		return view
+	}
+	box := m.rendersetconfirm()
+	x := max0((m.width - lipgloss.Width(box)) / 2)
+	y := max0((m.height - lipgloss.Height(box)) / 2)
+	return placeoverlay(x, y, box, view)
 }
 
 func (m Menu) editmodalsize() (int, int) {
