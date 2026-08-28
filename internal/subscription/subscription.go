@@ -9,19 +9,62 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/alexandria-proxy/alexandria-cli/internal/hwid"
 )
 
 const (
-	useragent = "Alexandria"
-	maxbody   = 4 << 20
+	maxbody    = 4 << 20
+	devicename = "Alexandria"
 )
+
+var Version = "dev"
+
+type Fetchopts struct {
+	Useragent string
+	Timeout   time.Duration
+	Sendhwid  bool
+}
+
+func Defaultopts() Fetchopts {
+	return Fetchopts{Timeout: 12 * time.Second, Sendhwid: true}
+}
+
+func Useragent() string {
+	return "Alexandria/" + Version + " (" + runtime.GOOS + "; " + runtime.GOARCH + ")"
+}
+
+func (o Fetchopts) apply(req *http.Request) {
+	ua := strings.TrimSpace(o.Useragent)
+	if ua == "" {
+		ua = Useragent()
+	}
+	req.Header.Set("User-Agent", ua)
+	if !o.Sendhwid {
+		return
+	}
+	req.Header.Set("X-Device-Name", devicename)
+	req.Header.Set("X-Device-Os", hwid.OS())
+	req.Header.Set("X-Hwid", hwid.ID())
+}
+
+func (o Fetchopts) client() *http.Client {
+	t := o.Timeout
+	if t <= 0 {
+		t = 12 * time.Second
+	}
+	return &http.Client{Timeout: t}
+}
 
 type Server struct {
 	Name     string `json:"name"`
@@ -47,8 +90,6 @@ type Subscription struct {
 	Servers     []Server      `json:"servers"`
 }
 
-var httpclient = &http.Client{Timeout: 12 * time.Second}
-
 func sanitizeurl(raw string) string {
 	cleaned := strings.Map(func(r rune) rune {
 		if r < 0x20 || r == 0x7f {
@@ -59,15 +100,15 @@ func sanitizeurl(raw string) string {
 	return strings.TrimSpace(cleaned)
 }
 
-func Fetch(ctx context.Context, raw string) (Subscription, error) {
+func Fetch(ctx context.Context, raw string, o Fetchopts) (Subscription, error) {
 	raw = sanitizeurl(raw)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
 	if err != nil {
 		return Subscription{}, err
 	}
-	req.Header.Set("User-Agent", useragent)
+	o.apply(req)
 
-	resp, err := httpclient.Do(req)
+	resp, err := o.client().Do(req)
 	if err != nil {
 		return Subscription{}, err
 	}
@@ -392,7 +433,7 @@ func Merge(prev, cur Subscription) Subscription {
 	return cur
 }
 
-func Ping(ctx context.Context, sub *Subscription) {
+func Ping(ctx context.Context, sub *Subscription, proto string) {
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 8)
 	for i := range sub.Servers {
@@ -401,14 +442,20 @@ func Ping(ctx context.Context, sub *Subscription) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			sub.Servers[i].PingMs = pingone(ctx, sub.Servers[i].Host, sub.Servers[i].Port)
+			sub.Servers[i].PingMs = pingone(ctx, sub.Servers[i].Host, sub.Servers[i].Port, proto)
 		}(i)
 	}
 	wg.Wait()
 }
 
-func pingone(ctx context.Context, host string, port int) int {
-	if host == "" || port == 0 {
+func pingone(ctx context.Context, host string, port int, proto string) int {
+	if host == "" {
+		return -1
+	}
+	if proto == "icmp" {
+		return pingicmp(ctx, host)
+	}
+	if port == 0 {
 		return -1
 	}
 	d := net.Dialer{Timeout: 3 * time.Second}
@@ -418,11 +465,74 @@ func pingone(ctx context.Context, host string, port int) int {
 		return -1
 	}
 	conn.Close()
-	ms := int(time.Since(start).Milliseconds())
+	return clampms(time.Since(start))
+}
+
+var icmptime = regexp.MustCompile(`(?i)[=<]\s*([0-9]+(?:[.,][0-9]+)?)\s*(?:ms|мс)`)
+
+func icmpargs(host string) []string {
+	switch runtime.GOOS {
+	case "windows":
+		return []string{"-n", "1", "-w", "3000", host}
+	case "darwin":
+		return []string{"-n", "-c", "1", "-t", "3", host}
+	}
+	return []string{"-n", "-c", "1", "-W", "3", host}
+}
+
+func pingicmp(ctx context.Context, host string) int {
+	bin, err := exec.LookPath("ping")
+	if err != nil {
+		return -1
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	out, err := exec.CommandContext(ctx, bin, icmpargs(host)...).CombinedOutput()
+	if err != nil {
+		return -1
+	}
+	elapsed := time.Since(start)
+	if m := icmptime.FindSubmatch(out); len(m) == 2 {
+		v, err := strconv.ParseFloat(strings.Replace(string(m[1]), ",", ".", 1), 64)
+		if err == nil {
+			return clampms(time.Duration(v * float64(time.Millisecond)))
+		}
+	}
+	return clampms(elapsed)
+}
+
+func clampms(d time.Duration) int {
+	ms := int(d.Milliseconds())
 	if ms < 1 {
 		ms = 1
 	}
 	return ms
+}
+
+func Sortservers(servers []Server, mode string) []Server {
+	if mode != "ping" && mode != "alpha" {
+		return servers
+	}
+	out := append([]Server(nil), servers...)
+	if mode == "alpha" {
+		sort.SliceStable(out, func(i, j int) bool {
+			return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
+		})
+		return out
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := out[i].PingMs, out[j].PingMs
+		if a <= 0 {
+			a = 1 << 30
+		}
+		if b <= 0 {
+			b = 1 << 30
+		}
+		return a < b
+	})
+	return out
 }
 
 func dir() (string, error) {
@@ -479,7 +589,6 @@ func SaveAll(subs []Subscription) error {
 	return atomicwrite(p, data, 0600)
 }
 
-// atomicwrite lands data
 func atomicwrite(path string, data []byte, perm os.FileMode) error {
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".subs-*.tmp")
 	if err != nil {
