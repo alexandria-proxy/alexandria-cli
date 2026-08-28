@@ -22,3 +22,11 @@ func machineid() string {
 	}
 	return ""
 }
+
+func release() string {
+	out, err := exec.Command("sw_vers", "-productVersion").Output()
+	if err != nil {
+		return "unknown"
+	}
+	return strings.TrimSpace(string(out))
+}
