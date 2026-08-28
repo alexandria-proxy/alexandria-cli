@@ -21,9 +21,10 @@ type navid int
 const (
 	navservers navid = iota
 	navsettings
+	navlogs
 )
 
-var navitems = []navid{navservers, navsettings}
+var navitems = []navid{navservers, navsettings, navlogs}
 
 var (
 	burgerst  = lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
@@ -97,8 +98,11 @@ func (m Menu) drawervisible() int {
 }
 
 func (m Menu) navlabel(id navid) string {
-	if id == navsettings {
+	switch id {
+	case navsettings:
 		return m.tr.SettingsTitle
+	case navlogs:
+		return m.tr.LogsTitle
 	}
 	return m.tr.ServersTitle
 }
@@ -162,10 +166,14 @@ func (m Menu) navat(x, y int) int {
 }
 
 func (m Menu) opendrawer() (tea.Model, tea.Cmd) {
+	var commit tea.Cmd
+	if m.focus == focussettings {
+		commit = m.commitinput(m.currentrows())
+	}
 	m.draweropen = true
 	m.navidx = m.navsect
 	m.burgerhover = true
-	return m.withtick(nil)
+	return m.withtick(commit)
 }
 
 func (m Menu) closedrawer() (tea.Model, tea.Cmd) {
