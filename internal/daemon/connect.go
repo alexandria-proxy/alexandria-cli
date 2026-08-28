@@ -8,9 +8,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/alexandria-proxy/alexandria-cli/internal/config"
 	"github.com/alexandria-proxy/alexandria-cli/internal/ipc"
 	"github.com/alexandria-proxy/alexandria-cli/internal/singbox"
 	"github.com/alexandria-proxy/alexandria-cli/internal/subscription"
+	"github.com/alexandria-proxy/alexandria-cli/internal/sysproxy"
 	"github.com/alexandria-proxy/alexandria-cli/internal/xray"
 	"github.com/alexandria-proxy/alexandria-cli/internal/xraygen"
 )
@@ -48,16 +50,23 @@ func cfgfile(name string) (string, error) {
 	return filepath.Join(filepath.Dir(p), name), nil
 }
 
-const logcap = 200 << 20
+func logcapfor(set config.Logs) int64 {
+	if set.Max <= 0 {
+		return 0
+	}
+	return set.Max
+}
 
 type caplog struct {
 	f   *os.File
+	src string
 	max int64
 	n   int64
 }
 
 func (w *caplog) Write(p []byte) (int, error) {
-	if w.n+int64(len(p)) > w.max {
+	logcore(w.src, p)
+	if w.max > 0 && w.n+int64(len(p)) > w.max {
 		if err := w.f.Truncate(0); err == nil {
 			w.n = 0
 		}
@@ -90,18 +99,37 @@ func openlog(name string) *caplog {
 	if fi, err := f.Stat(); err == nil {
 		n = fi.Size()
 	}
-	return &caplog{f: f, max: logcap, n: n}
+	return &caplog{f: f, src: name, max: logcapfor(logs.settings()), n: n}
 }
 
 func isxrayjson(raw string) bool {
 	return strings.HasPrefix(strings.TrimSpace(raw), "{")
 }
 
-func buildxray(raw string) (string, error) {
-	if isxrayjson(raw) {
-		return raw, nil
+func genopts(s config.Settings) xraygen.Opts {
+	return xraygen.Opts{
+		Metrics:    xraygen.Defaults().Metrics,
+		Socksport:  s.SocksPort,
+		LAN:        s.LAN,
+		Sniffing:   s.Advanced.Sniffing,
+		Preferip:   s.PreferIP,
+		Frag:       s.Fragment.On,
+		Fragpkt:    s.Fragment.Packets,
+		Fraglen:    s.Fragment.Length,
+		Fragint:    s.Fragment.Interval,
+		Mux:        s.Mux.On,
+		Muxconc:    s.Mux.Concurrency,
+		Localdns:   s.Advanced.LocalDNS,
+		Jsondns:    s.Advanced.JSONDNS,
+		Resolvesrv: s.Advanced.ResolveSrv,
 	}
-	return xraygen.Build(raw)
+}
+
+func buildxray(raw string, o xraygen.Opts) (string, error) {
+	if isxrayjson(raw) {
+		return xraygen.Retune(raw, o)
+	}
+	return xraygen.BuildOpts(raw, o)
 }
 
 func (c *conn) isconnected() bool {
@@ -153,6 +181,7 @@ func (c *conn) stopnow() {
 	}
 	c.wg.Wait()
 
+	clearsysproxy()
 	tuncleanup(singbox.TunName)
 }
 
@@ -167,7 +196,11 @@ func gracefulstop(p *os.Process, done chan struct{}) {
 }
 
 func (c *conn) connect(srv subscription.Server, url string, idx int, mode string) ipc.Response {
-	cfg, err := buildxray(srv.Raw)
+	uc, _ := config.Load()
+	set := uc.Settings
+	logs.configure(set.Logs)
+
+	cfg, err := buildxray(srv.Raw, genopts(set))
 	if err != nil {
 		return ipc.Response{Error: "this server's protocol isn't supported yet: " + err.Error(), Code: "unsupported"}
 	}
@@ -195,7 +228,18 @@ func (c *conn) connect(srv subscription.Server, url string, idx int, mode string
 		if err != nil {
 			return ipc.Response{Error: err.Error()}
 		}
-		if err := os.WriteFile(tuncfg, []byte(singbox.Config(singbox.SocksPort(cfg))), 0600); err != nil {
+		tunjson := set.Advanced.TunCustom
+		if set.Advanced.TunConfig != "custom" || strings.TrimSpace(tunjson) == "" {
+			tunjson = singbox.Config(singbox.Opts{
+				Socksport: singbox.SocksPort(cfg),
+				Stack:     set.Advanced.TunStack,
+				Dnson:     set.Advanced.TunDNSOn,
+				Dns:       set.Advanced.TunDNS,
+				Preferip:  set.PreferIP,
+				Excluded:  set.Advanced.Excluded,
+			})
+		}
+		if err := os.WriteFile(tuncfg, []byte(tunjson), 0600); err != nil {
 			return ipc.Response{Error: err.Error()}
 		}
 		procs = append(procs, proc{
@@ -206,7 +250,35 @@ func (c *conn) connect(srv subscription.Server, url string, idx int, mode string
 		})
 	}
 
-	return c.start(url, idx, mode, procs, xraygen.MetricsPort(cfg))
+	resp := c.start(url, idx, mode, procs, xraygen.MetricsPort(cfg))
+	if resp.OK && resp.Connected {
+		logevent("connected · " + mode + " · " + srv.Name)
+		applysysproxy(set)
+	}
+	return resp
+}
+
+func applysysproxy(s config.Settings) {
+	if !s.Advanced.SysProxy {
+		return
+	}
+	host := "127.0.0.1"
+	if s.LAN {
+		host = "0.0.0.0"
+	}
+	if err := sysproxy.Enable(sysproxy.Opts{Host: host, Socks: s.SocksPort, HTTP: s.SocksPort + 1}); err != nil {
+		logerr("system proxy: " + err.Error())
+	}
+}
+
+func clearsysproxy() {
+	uc, err := config.Load()
+	if err != nil || !uc.Settings.Advanced.SysProxy {
+		return
+	}
+	if err := sysproxy.Disable(); err != nil {
+		logerr("system proxy: " + err.Error())
+	}
 }
 
 func (c *conn) start(url string, idx int, mode string, procs []proc, metrics int) ipc.Response {
@@ -314,6 +386,7 @@ func (c *conn) supervise(p proc, stop chan struct{}) {
 				c.failcode(p.name+" keeps exiting — check the config or a port conflict", "crashloop")
 				return
 			}
+			logs.push(p.name, "error", "exited after "+time.Since(start).Truncate(time.Millisecond).String()+", restarting")
 		} else {
 			fails = 0
 		}

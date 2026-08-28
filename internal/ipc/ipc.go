@@ -10,7 +10,7 @@ import (
 	"github.com/alexandria-proxy/alexandria-cli/internal/subscription"
 )
 
-const ProtocolVersion = 10
+const ProtocolVersion = 11
 
 type Request struct {
 	Cmd    string `json:"cmd"`
@@ -18,6 +18,16 @@ type Request struct {
 	SrvIdx int    `json:"srv_idx,omitempty"`
 	Raw    string `json:"raw,omitempty"`
 	Mode   string `json:"mode,omitempty"`
+	Since  int64  `json:"since,omitempty"`
+	Kind   string `json:"kind,omitempty"`
+}
+
+type Logline struct {
+	At   int64  `json:"at"`
+	Seq  int64  `json:"seq"`
+	Src  string `json:"src"`
+	Lvl  string `json:"lvl"`
+	Text string `json:"text"`
 }
 
 type Response struct {
@@ -37,6 +47,8 @@ type Response struct {
 	UpRate        int64                       `json:"up_rate,omitempty"`
 	DownRate      int64                       `json:"down_rate,omitempty"`
 	Subscriptions []subscription.Subscription `json:"subscriptions,omitempty"`
+	Logs          []Logline                   `json:"logs,omitempty"`
+	Seq           int64                       `json:"seq,omitempty"`
 }
 
 type Handler func(Request) Response

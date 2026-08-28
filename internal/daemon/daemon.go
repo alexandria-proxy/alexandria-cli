@@ -16,6 +16,7 @@ import (
 
 	"github.com/alexandria-proxy/alexandria-cli/internal/config"
 	"github.com/alexandria-proxy/alexandria-cli/internal/ipc"
+	"github.com/alexandria-proxy/alexandria-cli/internal/singbox"
 	"github.com/alexandria-proxy/alexandria-cli/internal/subscription"
 )
 
@@ -40,6 +41,31 @@ type state struct {
 	quit     chan struct{}
 	quitonce sync.Once
 	lastbeat time.Time
+}
+
+func usersettings() config.Settings {
+	c, err := config.Load()
+	if err != nil {
+		return config.Defaults().Settings
+	}
+	logs.configure(c.Settings.Logs)
+	return c.Settings
+}
+
+func fetchopts(s config.Settings) subscription.Fetchopts {
+	return subscription.Fetchopts{
+		Useragent: s.Subs.UserAgent,
+		Timeout:   time.Duration(s.Subs.TimeoutSec) * time.Second,
+		Sendhwid:  s.Subs.SendHWID,
+	}
+}
+
+func fetchwindow(s config.Settings) time.Duration {
+	d := time.Duration(s.Subs.TimeoutSec)*time.Second + 3*time.Second
+	if d < 5*time.Second {
+		d = 5 * time.Second
+	}
+	return d
 }
 
 func (s *state) shutdown() {
@@ -132,9 +158,6 @@ func (s *state) findserver(url string, idx int) (subscription.Server, bool) {
 	return subscription.Server{}, false
 }
 
-// autoconnect is the boot path: refresh the sub, ping everything, take the
-// quickest server. Network is usually still coming up at boot, so we keep
-// retrying until the deadline and only then fall back to the last used server.
 func (s *state) autoconnect() {
 	cfg, err := config.Load()
 	if err != nil {
@@ -190,10 +213,11 @@ func (s *state) firstsub() string {
 }
 
 func (s *state) refreshsub(url string) {
+	set := usersettings()
 	ctx, cancel := context.WithTimeout(context.Background(), fetchgrace)
 	defer cancel()
 
-	sub, err := subscription.Fetch(ctx, url)
+	sub, err := subscription.Fetch(ctx, url, fetchopts(set))
 	if err != nil || len(sub.Servers) == 0 {
 		return
 	}
@@ -212,8 +236,6 @@ func (s *state) refreshsub(url string) {
 	_ = subscription.SaveAll(snapshot)
 }
 
-// connectfastest pings the whole sub and walks the servers in ping order, so a
-// dead-but-quick box doesn't leave us offline.
 func (s *state) connectfastest(url, mode string) bool {
 	order := s.pingorder(url)
 	tries := 0
@@ -250,7 +272,7 @@ func (s *state) pingorder(url string) []int {
 
 	ctx, cancel := context.WithTimeout(context.Background(), pinggrace)
 	probe := subscription.Subscription{Servers: servers}
-	subscription.Ping(ctx, &probe)
+	subscription.Ping(ctx, &probe, usersettings().PingProto)
 	cancel()
 
 	s.mu.Lock()
@@ -310,8 +332,12 @@ func Run(autoconnect bool) error {
 	}
 	defer ln.Close()
 
+	logs.configure(usersettings().Logs)
+	logevent("daemon started")
+
 	go s.idlewatch()
 	go s.wakewatch()
+	go s.autoupdatewatch()
 
 	if autoconnect {
 		go s.autoconnect()
@@ -327,6 +353,7 @@ func Run(autoconnect bool) error {
 	case <-s.quit:
 	}
 
+	logevent("daemon stopping")
 	s.conn.stopnow()
 	cleanlogs()
 	_ = os.Remove(pid)
@@ -360,6 +387,86 @@ func stopdaemon() {
 	}
 }
 
+func (s *state) autoupdatewatch() {
+	t := time.NewTicker(time.Minute)
+	defer t.Stop()
+	last := time.Time{}
+	for {
+		select {
+		case <-s.quit:
+			return
+		case <-t.C:
+		}
+		set := usersettings()
+		if !set.Subs.Auto {
+			continue
+		}
+		s.touch()
+		every := time.Duration(set.Subs.IntervalH) * time.Hour
+		if time.Since(last) < every {
+			continue
+		}
+		last = time.Now()
+		s.updateall()
+	}
+}
+
+func (s *state) updateall() {
+	s.mu.Lock()
+	urls := make([]string, 0, len(s.subs))
+	for i := range s.subs {
+		urls = append(urls, s.subs[i].URL)
+	}
+	s.mu.Unlock()
+
+	for _, u := range urls {
+		s.refreshsub(u)
+	}
+	if len(urls) > 0 {
+		logevent("auto update finished · " + strconv.Itoa(len(urls)) + " subscription(s)")
+	}
+}
+
+func (s *state) reset(kind string) ipc.Response {
+	switch kind {
+	case "tun":
+		s.conn.stopnow()
+		tuncleanup(singbox.TunName)
+		if p, err := cfgfile("tun.json"); err == nil {
+			_ = os.Remove(p)
+		}
+		logevent("tunnel configuration reset")
+		return ipc.Response{OK: true}
+
+	case "settings":
+		c, _ := config.Load()
+		d := config.Defaults()
+		d.Lang, d.Mode, d.LastURL, d.LastSrv = c.Lang, c.Mode, c.LastURL, c.LastSrv
+		if err := config.Save(d); err != nil {
+			return ipc.Response{Error: err.Error()}
+		}
+		logevent("settings reset to defaults")
+		return ipc.Response{OK: true}
+
+	case "user":
+		s.conn.stopnow()
+		s.mu.Lock()
+		s.subs = nil
+		s.mu.Unlock()
+		_ = subscription.SaveAll(nil)
+		c, _ := config.Load()
+		d := config.Defaults()
+		d.Lang = c.Lang
+		if err := config.Save(d); err != nil {
+			return ipc.Response{Error: err.Error()}
+		}
+		logs.reset()
+		logevent("user data reset")
+		return ipc.Response{OK: true, Subscriptions: nil}
+	}
+	return ipc.Response{Error: "unknown reset kind"}
+}
+
 func (s *state) handle(req ipc.Request) ipc.Response {
 	s.touch()
 	switch req.Cmd {
@@ -380,6 +487,7 @@ func (s *state) handle(req ipc.Request) ipc.Response {
 		return s.conn.connect(srv, req.URL, req.SrvIdx, req.Mode)
 
 	case "disconnect":
+		logevent("disconnect requested")
 		return s.conn.disconnect()
 
 	case "status":
@@ -392,11 +500,20 @@ func (s *state) handle(req ipc.Request) ipc.Response {
 		go s.shutdown()
 		return ipc.Response{OK: true}
 
+	case "logs":
+		logs.configure(usersettings().Logs)
+		lines, seq := logs.since(req.Since)
+		return ipc.Response{OK: true, Logs: lines, Seq: seq}
+
+	case "reset":
+		return s.reset(req.Kind)
+
 	case "add_subscription":
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		set := usersettings()
+		ctx, cancel := context.WithTimeout(context.Background(), fetchwindow(set))
 		defer cancel()
 
-		sub, err := subscription.Fetch(ctx, req.URL)
+		sub, err := subscription.Fetch(ctx, req.URL, fetchopts(set))
 		if err != nil {
 			return ipc.Response{Error: err.Error()}
 		}
@@ -464,9 +581,9 @@ func (s *state) handle(req ipc.Request) ipc.Response {
 			return ipc.Response{Error: "subscription not found"}
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		probe := subscription.Subscription{Servers: servers}
-		subscription.Ping(ctx, &probe)
+		subscription.Ping(ctx, &probe, usersettings().PingProto)
 		cancel()
 
 		s.mu.Lock()
