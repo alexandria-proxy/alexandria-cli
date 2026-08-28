@@ -9,10 +9,11 @@ import (
 
 	"github.com/alexandria-proxy/alexandria-cli/internal/config"
 	"github.com/alexandria-proxy/alexandria-cli/internal/daemon"
+	"github.com/alexandria-proxy/alexandria-cli/internal/subscription"
 	"github.com/alexandria-proxy/alexandria-cli/internal/tui"
 )
 
-var version = "0.0.14"
+var version = "0.15"
 
 //go:embed core/manifest.json
 var coremanifest []byte
@@ -47,6 +48,8 @@ func main() {
 		return
 	}
 
+	subscription.Version = version
+
 	if *daemonmode || os.Getenv("ALEXANDRIA_DAEMON") == "1" {
 		if err := daemon.Run(*autoconnect); err != nil {
 			fmt.Fprintln(os.Stderr, "daemon:", err)
@@ -72,7 +75,7 @@ func main() {
 		}
 	}
 
-	if err := tui.RunMenu(cfg.Lang, cfg.Mode, menulogomono, menulogocolor); err != nil {
+	if err := tui.RunMenu(cfg, menulogomono, menulogocolor); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
