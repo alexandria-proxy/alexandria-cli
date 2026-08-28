@@ -1,6 +1,7 @@
 package xraygen
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -8,31 +9,206 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
 const (
 	socksport  = 10808
-	httpport   = 10809
 	metricslo  = 10810
 	metricshi  = 10819
 	metricsin  = "metrics_in"
 	metricsout = "metrics_out"
 	userlevel  = 8
+	fragtag    = "fragment"
 )
 
 var errunsupported = errors.New("unsupported share-link protocol")
 
 type Opts struct {
-	Metrics int
+	Metrics    int
+	Socksport  int
+	LAN        bool
+	Sniffing   bool
+	Preferip   string
+	Frag       bool
+	Fragpkt    string
+	Fraglen    string
+	Fragint    string
+	Mux        bool
+	Muxconc    int
+	Localdns   bool
+	Jsondns    bool
+	Resolvesrv bool
 }
 
 func Defaults() Opts {
-	return Opts{Metrics: freeport(metricslo, metricshi)}
+	return Opts{
+		Metrics:   freeport(metricslo, metricshi),
+		Socksport: socksport,
+		Sniffing:  true,
+		Preferip:  "auto",
+		Muxconc:   8,
+	}
+}
+
+func (o Opts) socks() int {
+	if o.Socksport < 1 || o.Socksport > 65534 {
+		return socksport
+	}
+	return o.Socksport
+}
+
+func (o Opts) listen() string {
+	if o.LAN {
+		return "0.0.0.0"
+	}
+	return "127.0.0.1"
+}
+
+func (o Opts) strategy() string {
+	switch o.Preferip {
+	case "ipv4":
+		return "UseIPv4"
+	case "ipv6":
+		return "UseIPv6"
+	}
+	return "UseIP"
 }
 
 func Build(link string) (string, error) {
 	return BuildOpts(link, Defaults())
+}
+
+func sniffblock(on bool) map[string]any {
+	return map[string]any{"enabled": on, "destOverride": []any{"http", "tls", "quic"}}
+}
+
+func (o Opts) inbounds() []any {
+	socks := o.socks()
+	in := []any{
+		map[string]any{
+			"tag":      "socks",
+			"listen":   o.listen(),
+			"port":     socks,
+			"protocol": "socks",
+			"settings": map[string]any{"udp": true, "auth": "noauth"},
+			"sniffing": sniffblock(o.Sniffing),
+		},
+		map[string]any{
+			"tag":      "http",
+			"listen":   o.listen(),
+			"port":     socks + 1,
+			"protocol": "http",
+			"sniffing": sniffblock(o.Sniffing),
+		},
+	}
+	return in
+}
+
+func (o Opts) fragoutbound() map[string]any {
+	return map[string]any{
+		"tag":      fragtag,
+		"protocol": "freedom",
+		"settings": map[string]any{
+			"domainStrategy": "AsIs",
+			"fragment": map[string]any{
+				"packets":  deflt(o.Fragpkt, "tlshello"),
+				"length":   deflt(o.Fraglen, "10-20"),
+				"interval": deflt(o.Fragint, "10-20"),
+			},
+		},
+		"streamSettings": map[string]any{
+			"sockopt": map[string]any{"tcpKeepAliveIdle": 100, "tcpNoDelay": true},
+		},
+	}
+}
+
+func submap(m map[string]any, key string) map[string]any {
+	v, ok := m[key].(map[string]any)
+	if !ok {
+		v = map[string]any{}
+		m[key] = v
+	}
+	return v
+}
+
+func (o Opts) decorate(ob map[string]any) {
+	if o.Mux {
+		conc := o.Muxconc
+		if conc < 1 || conc > 1024 {
+			conc = 8
+		}
+		ob["mux"] = map[string]any{"enabled": true, "concurrency": conc, "xudpConcurrency": conc}
+	} else {
+		delete(ob, "mux")
+	}
+
+	stream := submap(ob, "streamSettings")
+	sock := submap(stream, "sockopt")
+	if o.Frag {
+		sock["dialerProxy"] = fragtag
+	} else {
+		delete(sock, "dialerProxy")
+	}
+	if len(sock) == 0 {
+		delete(stream, "sockopt")
+	}
+	if len(stream) == 0 {
+		delete(ob, "streamSettings")
+	}
+}
+
+func serverfield(ob map[string]any) (map[string]any, bool) {
+	settings, ok := ob["settings"].(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	for _, key := range []string{"vnext", "servers"} {
+		list, ok := settings[key].([]any)
+		if !ok || len(list) == 0 {
+			continue
+		}
+		if first, ok := list[0].(map[string]any); ok {
+			return first, true
+		}
+	}
+	return nil, false
+}
+
+func (o Opts) resolve(ob map[string]any) {
+	node, ok := serverfield(ob)
+	if !ok {
+		return
+	}
+	host, _ := node["address"].(string)
+	if host == "" || net.ParseIP(host) != nil {
+		return
+	}
+	network := "ip"
+	switch o.Preferip {
+	case "ipv4":
+		network = "ip4"
+	case "ipv6":
+		network = "ip6"
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	addrs, err := net.DefaultResolver.LookupIP(ctx, network, host)
+	if err != nil || len(addrs) == 0 {
+		return
+	}
+	node["address"] = addrs[0].String()
+
+	stream := submap(ob, "streamSettings")
+	security, _ := stream["security"].(string)
+	switch security {
+	case "tls", "reality":
+		tls := submap(stream, security+"Settings")
+		if name, _ := tls["serverName"].(string); name == "" {
+			tls["serverName"] = host
+		}
+	}
 }
 
 func BuildOpts(link string, o Opts) (string, error) {
@@ -40,37 +216,33 @@ func BuildOpts(link string, o Opts) (string, error) {
 	if err != nil {
 		return "", err
 	}
-
-	inbounds := []any{
-		map[string]any{
-			"tag":      "socks",
-			"listen":   "127.0.0.1",
-			"port":     socksport,
-			"protocol": "socks",
-			"settings": map[string]any{"udp": true, "auth": "noauth"},
-			"sniffing": map[string]any{"enabled": true, "destOverride": []any{"http", "tls", "quic"}},
-		},
-		map[string]any{
-			"tag":      "http",
-			"listen":   "127.0.0.1",
-			"port":     httpport,
-			"protocol": "http",
-		},
+	o.decorate(ob)
+	if o.Resolvesrv {
+		o.resolve(ob)
 	}
+
+	outs := []any{ob}
+	if o.Frag {
+		outs = append(outs, o.fragoutbound())
+	}
+	outs = append(outs,
+		map[string]any{
+			"tag":      "direct",
+			"protocol": "freedom",
+			"settings": map[string]any{"domainStrategy": o.strategy()},
+		},
+		map[string]any{"tag": "block", "protocol": "blackhole"},
+	)
 
 	cfg := map[string]any{
-		"log": map[string]any{"loglevel": "warning"},
-		"outbounds": []any{
-			ob,
-			map[string]any{
-				"tag":      "direct",
-				"protocol": "freedom",
-				"settings": map[string]any{"domainStrategy": "UseIP"},
-			},
-			map[string]any{"tag": "block", "protocol": "blackhole"},
-		},
+		"log":       map[string]any{"loglevel": "warning"},
+		"outbounds": outs,
+	}
+	if o.Localdns {
+		cfg["dns"] = localdns()
 	}
 
+	inbounds := o.inbounds()
 	rules := []any{}
 	if o.Metrics > 0 {
 		inbounds = append(inbounds, map[string]any{
@@ -95,6 +267,80 @@ func BuildOpts(link string, o Opts) (string, error) {
 	b, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return "", err
+	}
+	return string(b), nil
+}
+
+func localdns() map[string]any {
+	return map[string]any{
+		"servers":       []any{"localhost"},
+		"queryStrategy": "UseIP",
+	}
+}
+
+func Retune(raw string, o Opts) (string, error) {
+	var cfg map[string]any
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		return raw, err
+	}
+
+	if o.Localdns {
+		cfg["dns"] = localdns()
+	} else if !o.Jsondns {
+		delete(cfg, "dns")
+	}
+
+	outs, _ := cfg["outbounds"].([]any)
+	filtered := make([]any, 0, len(outs)+1)
+	for _, item := range outs {
+		ob, ok := item.(map[string]any)
+		if !ok {
+			filtered = append(filtered, item)
+			continue
+		}
+		if tag, _ := ob["tag"].(string); tag == fragtag {
+			continue
+		}
+		filtered = append(filtered, ob)
+	}
+	if len(filtered) > 0 {
+		if ob, ok := filtered[0].(map[string]any); ok {
+			o.decorate(ob)
+			if o.Resolvesrv {
+				o.resolve(ob)
+			}
+		}
+	}
+	if o.Frag {
+		filtered = append(filtered, o.fragoutbound())
+	}
+	cfg["outbounds"] = filtered
+
+	ins, _ := cfg["inbounds"].([]any)
+	kept := make([]any, 0, len(ins))
+	for _, item := range ins {
+		in, ok := item.(map[string]any)
+		if !ok {
+			kept = append(kept, item)
+			continue
+		}
+		switch proto, _ := in["protocol"].(string); proto {
+		case "socks":
+			in["listen"] = o.listen()
+			in["port"] = o.socks()
+			in["sniffing"] = sniffblock(o.Sniffing)
+		case "http":
+			in["listen"] = o.listen()
+			in["port"] = o.socks() + 1
+			in["sniffing"] = sniffblock(o.Sniffing)
+		}
+		kept = append(kept, in)
+	}
+	cfg["inbounds"] = kept
+
+	b, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return raw, err
 	}
 	return string(b), nil
 }
