@@ -26,12 +26,3 @@ func machineid() string {
 	}
 	return ""
 }
-
-func release() string {
-	if b, err := os.ReadFile("/proc/sys/kernel/osrelease"); err == nil {
-		if v := strings.TrimSpace(string(b)); v != "" {
-			return v
-		}
-	}
-	return "unknown"
-}

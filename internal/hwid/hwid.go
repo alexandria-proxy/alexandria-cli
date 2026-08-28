@@ -36,10 +36,6 @@ func ID() string {
 	return cached
 }
 
-func Version() string {
-	return release()
-}
-
 func OS() string {
 	switch runtime.GOOS {
 	case "linux":

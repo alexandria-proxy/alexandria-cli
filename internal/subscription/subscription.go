@@ -26,7 +26,6 @@ import (
 const (
 	maxbody    = 4 << 20
 	devicename = "alexandria fuck you"
-	deviceos   = "peace"
 )
 
 var Version = "dev"
@@ -56,7 +55,6 @@ func (o Fetchopts) apply(req *http.Request) {
 	}
 	req.Header.Set("X-Hwid", hwid.ID())
 	req.Header.Set("X-Device-Os", hwid.OS())
-	req.Header.Set("X-Ver-Os", deviceos)
 	req.Header.Set("X-Device-Model", devicename)
 }
 
