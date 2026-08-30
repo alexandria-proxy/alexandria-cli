@@ -21,11 +21,18 @@ import (
 )
 
 const (
-	idletimeout = 60 * time.Second
-	waketick    = 5 * time.Second
-	wakegap     = 25 * time.Second
-	waketries   = 3
-	wakedelay   = 2 * time.Second
+	idletimeout  = 60 * time.Second
+	waketick     = 5 * time.Second
+	wakegap      = 25 * time.Second
+	waketries    = 5
+	wakedelay    = 2 * time.Second
+	wakedelaycap = 15 * time.Second
+
+	healthtick    = 10 * time.Second
+	healthgrace   = 8 * time.Second
+	healthstrikes = 2
+	repaircool    = 45 * time.Second
+	repaircap     = 5 * time.Minute
 
 	bootwindow   = 3 * time.Minute
 	bootretry    = 5 * time.Second
@@ -121,29 +128,105 @@ func (s *state) wakewatch() {
 }
 
 func (s *state) wake() {
-	s.conn.mu.Lock()
-	live, url, idx, mode := s.conn.connected, s.conn.url, s.conn.srvidx, s.conn.mode
-	s.conn.mu.Unlock()
-	if !live {
-		return
-	}
-	srv, ok := s.findserver(url, idx)
-	if !ok {
+	st := s.conn.state()
+	if !st.live {
 		return
 	}
 	s.conn.setrestarting(true)
 	defer s.conn.setrestarting(false)
-	for i := 0; i < waketries; i++ {
+
+	logevent("system resumed — restoring the tunnel")
+	waituplink(s.quit, uplinkbudget)
+	if !s.revive(st, waketries) {
+		logs.push("daemon", "warn", "tunnel is still not passing traffic after resume")
+	}
+}
+
+func (s *state) revive(st connstate, tries int) bool {
+	srv, ok := s.findserver(st.url, st.idx)
+	if !ok {
+		return false
+	}
+	gen := st.gen
+	delay := wakedelay
+	for i := 0; i < tries; i++ {
 		if i > 0 {
 			select {
 			case <-s.quit:
-				return
-			case <-time.After(wakedelay):
+				return false
+			case <-time.After(delay):
+			}
+			if delay *= 2; delay > wakedelaycap {
+				delay = wakedelaycap
 			}
 		}
-		if resp := s.conn.connect(srv, url, idx, mode); resp.Error == "" {
-			return
+		if s.conn.superseded(gen) {
+			return true
 		}
+		if resp := s.conn.connect(srv, st.url, st.idx, st.mode); resp.Error != "" {
+			continue
+		}
+		now := s.conn.state()
+		gen = now.gen
+		if healthy(now.mode, now.socks) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *state) healthwatch() {
+	t := time.NewTicker(healthtick)
+	defer t.Stop()
+
+	strikes, gen, seen := 0, int64(0), int64(0)
+	cool, last := repaircool, time.Time{}
+
+	for {
+		select {
+		case <-s.quit:
+			return
+		case <-t.C:
+		}
+
+		st := s.conn.state()
+		if !st.live || st.restarting {
+			strikes, seen = 0, 0
+			cool, gen = repaircool, st.gen
+			continue
+		}
+		if st.gen != gen {
+			strikes, seen, cool = 0, 0, repaircool
+			gen = st.gen
+		}
+		if time.Since(st.since) < healthgrace {
+			continue
+		}
+
+		if down := s.conn.stats.snapshot().down; down > seen {
+			strikes, seen = 0, down
+			continue
+		}
+		if healthy(st.mode, st.socks) {
+			strikes, seen = 0, s.conn.stats.snapshot().down
+			continue
+		}
+		if strikes++; strikes < healthstrikes {
+			continue
+		}
+		if !last.IsZero() && time.Since(last) < cool {
+			continue
+		}
+
+		strikes, last = 0, time.Now()
+		if cool *= 2; cool > repaircap {
+			cool = repaircap
+		}
+		logs.push("daemon", "warn", "tunnel is up but no traffic gets through — reconnecting")
+		s.conn.setrestarting(true)
+		s.revive(st, waketries)
+		s.conn.setrestarting(false)
+		gen = s.conn.state().gen
 	}
 }
 
@@ -175,14 +258,17 @@ func (s *state) autoconnect() {
 		return
 	}
 
+	mine := int64(0)
 	deadline := time.Now().Add(bootwindow)
 	for {
 		s.touch()
-		if s.conn.isconnected() {
+		if st := s.conn.state(); st.live && st.gen != mine {
 			return
 		}
 		s.refreshsub(url)
-		if s.connectfastest(url, mode) {
+		ok, gen := s.connectfastest(url, mode, mine)
+		mine = gen
+		if ok {
 			return
 		}
 		if time.Now().After(deadline) {
@@ -195,7 +281,7 @@ func (s *state) autoconnect() {
 		}
 	}
 
-	if s.conn.isconnected() {
+	if st := s.conn.state(); st.live && st.gen != mine {
 		return
 	}
 	if srv, ok := s.findserver(url, cfg.LastSrv); ok {
@@ -236,24 +322,32 @@ func (s *state) refreshsub(url string) {
 	_ = subscription.SaveAll(snapshot)
 }
 
-func (s *state) connectfastest(url, mode string) bool {
+func (s *state) connectfastest(url, mode string, mine int64) (bool, int64) {
 	order := s.pingorder(url)
 	tries := 0
 	for _, idx := range order {
+		if st := s.conn.state(); st.live && st.gen != mine {
+			return true, mine
+		}
 		srv, ok := s.findserver(url, idx)
 		if !ok {
 			continue
 		}
 		if resp := s.conn.connect(srv, url, idx, mode); resp.Error == "" {
-			savelast(url, idx)
-			return true
+			st := s.conn.state()
+			mine = st.gen
+			if healthy(st.mode, st.socks) {
+				savelast(url, idx)
+				return true, mine
+			}
+			logs.push("daemon", "warn", srv.Name+" came up but passed no traffic — trying the next one")
 		}
 		s.touch()
 		if tries++; tries >= fastesttries {
 			break
 		}
 	}
-	return false
+	return false, mine
 }
 
 func (s *state) pingorder(url string) []int {
@@ -337,6 +431,7 @@ func Run(autoconnect bool) error {
 
 	go s.idlewatch()
 	go s.wakewatch()
+	go s.healthwatch()
 	go s.autoupdatewatch()
 
 	if autoconnect {
@@ -354,7 +449,7 @@ func Run(autoconnect bool) error {
 	}
 
 	logevent("daemon stopping")
-	s.conn.stopnow()
+	s.conn.stopop()
 	cleanlogs()
 	_ = os.Remove(pid)
 	_ = os.Remove(path)
@@ -430,7 +525,7 @@ func (s *state) updateall() {
 func (s *state) reset(kind string) ipc.Response {
 	switch kind {
 	case "tun":
-		s.conn.stopnow()
+		s.conn.stopop()
 		tuncleanup(singbox.TunName)
 		if p, err := cfgfile("tun.json"); err == nil {
 			_ = os.Remove(p)
@@ -449,7 +544,7 @@ func (s *state) reset(kind string) ipc.Response {
 		return ipc.Response{OK: true}
 
 	case "user":
-		s.conn.stopnow()
+		s.conn.stopop()
 		s.mu.Lock()
 		s.subs = nil
 		s.mu.Unlock()

@@ -27,6 +27,7 @@ type proc struct {
 
 type conn struct {
 	mu         sync.Mutex
+	opmu       sync.Mutex
 	wg         sync.WaitGroup
 	cmds       map[string]*exec.Cmd
 	connected  bool
@@ -34,12 +35,25 @@ type conn struct {
 	url        string
 	srvidx     int
 	mode       string
+	socks      int
+	gen        int64
 	since      time.Time
 	lasterr    string
 	lastcode   string
 	metrics    int
 	stop       chan struct{}
 	stats      stattrack
+}
+
+type connstate struct {
+	live       bool
+	restarting bool
+	url        string
+	idx        int
+	mode       string
+	socks      int
+	gen        int64
+	since      time.Time
 }
 
 func cfgfile(name string) (string, error) {
@@ -138,6 +152,27 @@ func (c *conn) isconnected() bool {
 	return c.connected
 }
 
+func (c *conn) state() connstate {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return connstate{
+		live:       c.connected,
+		restarting: c.restarting,
+		url:        c.url,
+		idx:        c.srvidx,
+		mode:       c.mode,
+		socks:      c.socks,
+		gen:        c.gen,
+		since:      c.since,
+	}
+}
+
+func (c *conn) superseded(gen int64) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.gen != gen || !c.connected
+}
+
 func (c *conn) setrestarting(v bool) {
 	c.mu.Lock()
 	c.restarting = v
@@ -165,8 +200,14 @@ func (c *conn) status() ipc.Response {
 }
 
 func (c *conn) disconnect() ipc.Response {
-	c.stopnow()
+	c.stopop()
 	return ipc.Response{OK: true, Connected: false}
+}
+
+func (c *conn) stopop() {
+	c.opmu.Lock()
+	defer c.opmu.Unlock()
+	c.stopnow()
 }
 
 func (c *conn) stopnow() {
@@ -196,6 +237,9 @@ func gracefulstop(p *os.Process, done chan struct{}) {
 }
 
 func (c *conn) connect(srv subscription.Server, url string, idx int, mode string) ipc.Response {
+	c.opmu.Lock()
+	defer c.opmu.Unlock()
+
 	uc, _ := config.Load()
 	set := uc.Settings
 	logs.configure(set.Logs)
@@ -216,6 +260,8 @@ func (c *conn) connect(srv subscription.Server, url string, idx int, mode string
 		stdin: cfg,
 	}}
 
+	socksport := singbox.SocksPort(cfg)
+
 	if mode == "tun" {
 		if !iselevated() {
 			return ipc.Response{Error: "tun mode needs elevated privileges — " + elevatehint(), Code: "needelevate"}
@@ -231,7 +277,7 @@ func (c *conn) connect(srv subscription.Server, url string, idx int, mode string
 		tunjson := set.Advanced.TunCustom
 		if set.Advanced.TunConfig != "custom" || strings.TrimSpace(tunjson) == "" {
 			tunjson = singbox.Config(singbox.Opts{
-				Socksport: singbox.SocksPort(cfg),
+				Socksport: socksport,
 				Stack:     set.Advanced.TunStack,
 				Dnson:     set.Advanced.TunDNSOn,
 				Dns:       set.Advanced.TunDNS,
@@ -250,7 +296,7 @@ func (c *conn) connect(srv subscription.Server, url string, idx int, mode string
 		})
 	}
 
-	resp := c.start(url, idx, mode, procs, xraygen.MetricsPort(cfg))
+	resp := c.start(url, idx, mode, procs, socksport, xraygen.MetricsPort(cfg))
 	if resp.OK && resp.Connected {
 		logevent("connected · " + mode + " · " + srv.Name)
 		applysysproxy(set)
@@ -281,13 +327,15 @@ func clearsysproxy() {
 	}
 }
 
-func (c *conn) start(url string, idx int, mode string, procs []proc, metrics int) ipc.Response {
+func (c *conn) start(url string, idx int, mode string, procs []proc, socks, metrics int) ipc.Response {
 	c.stopnow()
 
 	stop := make(chan struct{})
 	c.mu.Lock()
 	c.connected = true
 	c.url, c.srvidx, c.mode = url, idx, mode
+	c.socks = socks
+	c.gen++
 	c.since = time.Now()
 	c.lasterr, c.lastcode = "", ""
 	c.metrics = metrics
