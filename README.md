@@ -75,7 +75,7 @@ curl -fsSL https://raw.githubusercontent.com/alexandria-proxy/alexandria-cli/mai
 irm https://raw.githubusercontent.com/alexandria-proxy/alexandria-cli/main/scripts/install.ps1 | iex
 ```
 
-### Arch Linux
+### Arch Linux (soon)
 
 ```bash
 yay -S alexandria-cli
