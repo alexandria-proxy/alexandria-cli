@@ -1,0 +1,63 @@
+{
+  "version": "26.7.28",
+  "assets": {
+    "linux-amd64": {
+      "file": "Xray-linux-64.zip",
+      "sha256": "8195d909f1109b8f3d99eefe401a3c451d7bf4af71f24d3815420f77e5dd2a40"
+    },
+    "linux-arm64": {
+      "file": "Xray-linux-arm64-v8a.zip",
+      "sha256": "f5698bb218ada3b4022db26fafc39601c5f53b46b19eb76c9616325985807501"
+    },
+    "darwin-amd64": {
+      "file": "Xray-macos-64.zip",
+      "sha256": "812f7d9de6d3506795eabda2f6928ba301c632c3fe6fa39c52ea8e0ed9e4e244"
+    },
+    "darwin-arm64": {
+      "file": "Xray-macos-arm64-v8a.zip",
+      "sha256": "9b99a351febe31b7e0c7f22deeb1577a1da0b98aaa51aec7fd17832e68cf63d6"
+    },
+    "windows-amd64": {
+      "file": "Xray-windows-64.zip",
+      "sha256": "c7172078fca4711bcd92a4774dcd1822544579c58816197575c47533317fd8d1"
+    },
+    "windows-arm64": {
+      "file": "Xray-windows-arm64-v8a.zip",
+      "sha256": "2d61646f79fdc6724e68a41eb235f6a7253cfac2809caa736ad065f6c10e14a2"
+    }
+  },
+  "singbox": {
+    "version": "1.12.12",
+    "assets": {
+      "linux-amd64": {
+        "file": "sing-box-1.12.12-linux-amd64.tar.gz",
+        "sha256": "7c103cb2f9a7dc54cb82962043596718ed27989a478d6405f0939a9b775f889f"
+      },
+      "linux-arm64": {
+        "file": "sing-box-1.12.12-linux-arm64.tar.gz",
+        "sha256": "fbdafe76b417ef96abea90d450859db9eb97f411abdf9be7cd7204695892c8f7"
+      },
+      "darwin-amd64": {
+        "file": "sing-box-1.12.12-darwin-amd64.tar.gz",
+        "sha256": "d01ebfd7c1ad3ea559b89451a3643b662eb90ed4c78bca93bb4ddecdeb2bb01a"
+      },
+      "darwin-arm64": {
+        "file": "sing-box-1.12.12-darwin-arm64.tar.gz",
+        "sha256": "b85881fdb9a10fbe2bc0dedb6c36a03af9c31aec870654d0bb49bab2b8e1f58a"
+      },
+      "windows-amd64": {
+        "file": "sing-box-1.12.12-windows-amd64.zip",
+        "sha256": "352c69526b76cd199539c0e02b4042d1acc109cde3a0a671a40af4e24290faa4"
+      },
+      "windows-arm64": {
+        "file": "sing-box-1.12.12-windows-arm64.zip",
+        "sha256": "3fdb79f710188e6db5025e8ef4abe778df215115b090d9d1dd0ffb592bb77dac"
+      }
+    }
+  },
+  "wintun": {
+    "version": "0.14.1",
+    "file": "wintun-0.14.1.zip",
+    "sha256": "07c256185d6ee3652e09fa55c0b673e2624b565e02c4b9091c79ca7d2f24ef51"
+  }
+}

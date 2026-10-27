@@ -1,0 +1,9 @@
+/alexandria-cli
+/alexandria-cli.exe
+/dist/
+/.cores/
+/completions/
+*.exe
+*.out
+go.work
+go.work.sum

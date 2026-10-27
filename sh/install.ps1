@@ -1,0 +1,174 @@
+param([switch]$Force)
+
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+
+$Repo = if ($env:ALEXANDRIA_REPO) { $env:ALEXANDRIA_REPO } else { "alexandria-proxy/alexandria-cli" }
+$AppDir = if ($env:ALEXANDRIA_HOME) { $env:ALEXANDRIA_HOME } else { "$env:LOCALAPPDATA\Alexandria" }
+$ConfigDir = Join-Path $env:APPDATA "alexandria"
+
+if ($env:ALEXANDRIA_FORCE -eq "1") { $Force = $true }
+
+$arch = switch ($env:PROCESSOR_ARCHITECTURE) {
+	"AMD64" { "amd64" }
+	"ARM64" { "arm64" }
+	default { throw "unsupported arch: $env:PROCESSOR_ARCHITECTURE" }
+}
+
+function Stop-Alexandria {
+	$root = $AppDir.ToLower()
+	Get-Process -Name "alexandria-cli", "xray", "sing-box" -ErrorAction SilentlyContinue | Where-Object {
+		$_.Path -and $_.Path.ToLower().StartsWith($root)
+	} | ForEach-Object {
+		Write-Host "stopping $($_.ProcessName) ..."
+		Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
+	}
+	$pidfile = Join-Path $ConfigDir "control.pid"
+	if (Test-Path $pidfile) {
+		try {
+			$procId = [int]((Get-Content $pidfile -ErrorAction Stop | Select-Object -First 1).Trim())
+			Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
+		} catch {}
+		Remove-Item $pidfile -Force -ErrorAction SilentlyContinue
+	}
+	$sock = Join-Path $ConfigDir "control.sock"
+	if (Test-Path $sock) { Remove-Item $sock -Force -ErrorAction SilentlyContinue }
+	Start-Sleep -Milliseconds 500
+}
+
+function Sync-Tree($Src, $Dst) {
+	New-Item -ItemType Directory -Force -Path $Dst | Out-Null
+	$srcRoot = (Resolve-Path $Src).Path
+	$dstRoot = (Resolve-Path $Dst).Path
+	Get-ChildItem -Path $Src -Recurse -File | ForEach-Object {
+		$rel = $_.FullName.Substring($srcRoot.Length).TrimStart('\')
+		$target = Join-Path $Dst $rel
+		$copy = $true
+		if (Test-Path $target) {
+			$a = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
+			$b = (Get-FileHash $target -Algorithm SHA256).Hash
+			if ($a -eq $b) { $copy = $false }
+		}
+		if ($copy) {
+			New-Item -ItemType Directory -Force -Path (Split-Path $target -Parent) | Out-Null
+			try {
+				Copy-Item $_.FullName $target -Force -ErrorAction Stop
+			} catch {
+				Move-Item $target "$target.$(Get-Random).old" -Force
+				Copy-Item $_.FullName $target -Force
+			}
+			Write-Host "  updated $rel"
+		}
+	}
+	Get-ChildItem -Path $Dst -Recurse -File | ForEach-Object {
+		$rel = $_.FullName.Substring($dstRoot.Length).TrimStart('\')
+		if (-not (Test-Path (Join-Path $Src $rel))) {
+			Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+			if ($rel -notlike "*.old") { Write-Host "  removed $rel" }
+		}
+	}
+}
+
+$version = $env:ALEXANDRIA_VERSION
+if (-not $version) {
+	$rel = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases?per_page=1"
+	$version = $rel[0].tag_name
+}
+if (-not $version) { throw "could not find a release for $Repo" }
+$version = $version.TrimStart('v')
+
+$cli = Join-Path $AppDir "alexandria-cli.exe"
+if (-not $Force -and (Test-Path $cli)) {
+	$current = ""
+	try { $current = (& $cli --version 2>$null | Select-Object -First 1) } catch {}
+	$current = ("$current" -replace '^alexandria(-cli)?\s+', '').Trim()
+	if ($current -and $current -eq $version) {
+		Write-Host "alexandria-cli $version is already installed (use -Force to reinstall)"
+		return
+	}
+}
+
+function Format-Bytes($n) {
+	if ($n -ge 1073741824) { return ("{0:N1}GiB" -f ($n / 1073741824)) }
+	if ($n -ge 1048576) { return ("{0:N1}MiB" -f ($n / 1048576)) }
+	if ($n -ge 1024) { return ("{0:N1}KiB" -f ($n / 1024)) }
+	return "$([long]$n)B"
+}
+
+function Download($url, $out) {
+	[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+	if ([Console]::IsOutputRedirected) {
+		(New-Object System.Net.WebClient).DownloadFile($url, $out)
+		return
+	}
+	$resp = [System.Net.WebRequest]::Create($url).GetResponse()
+	$total = $resp.ContentLength
+	$in = $resp.GetResponseStream()
+	$fs = [System.IO.File]::Create($out)
+	$sofar = [long]0
+	$sw = [System.Diagnostics.Stopwatch]::StartNew()
+	try {
+		$buf = New-Object byte[] 65536
+		$last = -1000
+		while (($n = $in.Read($buf, 0, $buf.Length)) -gt 0) {
+			$fs.Write($buf, 0, $n)
+			$sofar += $n
+			if ($sw.ElapsedMilliseconds - $last -ge 100) {
+				$last = $sw.ElapsedMilliseconds
+				$spd = $sofar / [Math]::Max($sw.Elapsed.TotalSeconds, 0.001)
+				if ($total -gt 0) {
+					Write-Host ("`r  {0,3}%  {1} / {2}   {3}/s    " -f [int]($sofar * 100 / $total), (Format-Bytes $sofar), (Format-Bytes $total), (Format-Bytes $spd)) -NoNewline
+				} else {
+					Write-Host ("`r  {0}   {1}/s    " -f (Format-Bytes $sofar), (Format-Bytes $spd)) -NoNewline
+				}
+			}
+		}
+	} finally {
+		$fs.Close(); $in.Close(); $resp.Close()
+	}
+	$spd = $sofar / [Math]::Max($sw.Elapsed.TotalSeconds, 0.001)
+	if ($total -gt 0) {
+		Write-Host ("`r  100%  {0} / {1}   {2}/s    " -f (Format-Bytes $sofar), (Format-Bytes $total), (Format-Bytes $spd))
+	} else {
+		Write-Host ("`r  {0}   {1}/s    " -f (Format-Bytes $sofar), (Format-Bytes $spd))
+	}
+}
+
+$base = "https://github.com/$Repo/releases/download/v$version"
+$archive = "alexandria-windows-$arch.zip"
+$tmp = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid())
+New-Item -ItemType Directory -Path $tmp | Out-Null
+
+try {
+	Write-Host "downloading $archive ..."
+	Download "$base/$archive" "$tmp\$archive"
+	try {
+		(New-Object System.Net.WebClient).DownloadFile("$base/digests.txt", "$tmp\digests.txt")
+	} catch {
+		(New-Object System.Net.WebClient).DownloadFile("$base/checksums.txt", "$tmp\digests.txt")
+	}
+
+	$line = Select-String -Path "$tmp\digests.txt" -SimpleMatch $archive | Select-Object -First 1
+	$want = ($line.Line -split '\s+')[0].ToLower()
+	$got = (Get-FileHash "$tmp\$archive" -Algorithm SHA256).Hash.ToLower()
+	if (-not $want -or $want -ne $got) { throw "digest verification failed for $archive" }
+	Write-Host "digests verified" -ForegroundColor Green
+
+	$stage = Join-Path $tmp "stage"
+	New-Item -ItemType Directory -Path $stage | Out-Null
+	Expand-Archive -Path "$tmp\$archive" -DestinationPath $stage -Force
+
+	Stop-Alexandria
+
+	Write-Host "syncing into $AppDir ..."
+	Sync-Tree $stage $AppDir
+
+	$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+	if ($userPath -notlike "*$AppDir*") {
+		[Environment]::SetEnvironmentVariable("Path", "$userPath;$AppDir", "User")
+		Write-Host "added $AppDir to your PATH (restart the terminal)"
+	}
+	Write-Host "installed alexandria-cli $version to $AppDir (run: alexandria-cli --help)"
+} finally {
+	Remove-Item -Recurse -Force $tmp
+}
