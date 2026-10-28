@@ -22,7 +22,7 @@ func elevated(err error) error {
 
 func installsvc() error {
 	if !conf.Elevated() {
-		infof("installing the alexandria service, this needs your password once")
+		infof("installing the service")
 	}
 	return elevated(ctl.Install())
 }
@@ -38,7 +38,7 @@ func ensurefor(mode string) error {
 
 func status() (ipc.Response, bool) {
 	if ipc.Rootowned() {
-		warnf("can't read the daemon: its socket belongs to root, rerun once with sudo")
+		warnf("the daemon socket belongs to root, use sudo once")
 		return ipc.Response{}, false
 	}
 	return ctl.Status()

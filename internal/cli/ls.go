@@ -44,15 +44,9 @@ type subjson struct {
 
 func lscmd() *cobra.Command {
 	c := &cobra.Command{
-		Use:     "ls [OPTION]... [SUB]...",
-		Aliases: []string{"list"},
-		Short:   "list servers",
-		Long: "List the servers of every subscription, or only of the given SUBs.\n" +
-			"The {number} in front of a server is what 'conn' takes, * marks the active\n" +
-			"(or the last used) one. Numbers never change with --sort or --unique.",
-		Example: "  alexandria-cli ls\n" +
-			"  alexandria-cli ls -s ping -u work\n" +
-			"  alexandria-cli ls -j | jq '.[].servers[].name'",
+		Use:               "ls [OPTION]... [SUB]...",
+		Aliases:           []string{"list"},
+		Short:             "list servers",
 		GroupID:           "servers",
 		Args:              cobra.ArbitraryArgs,
 		ValidArgsFunction: completesubs,
@@ -66,7 +60,7 @@ func lscmd() *cobra.Command {
 				return err
 			}
 			if len(list) == 0 && !o.json {
-				infof("no subscriptions yet, add one: alexandria-cli sub add URL")
+				infof("no subscriptions")
 				return nil
 			}
 			return printservers(list, findsubs(list, args), o)
@@ -75,7 +69,7 @@ func lscmd() *cobra.Command {
 	f := c.Flags()
 	f.StringP("sort", "s", "none", "sort servers by `WORD`: none, ping or name")
 	f.BoolP("reverse", "r", false, "reverse the sort order")
-	f.BoolP("unique", "u", false, "hide servers that repeat the same protocol, host and port")
+	f.BoolP("unique", "u", false, "hide duplicates")
 	f.BoolP("json", "j", false, "print JSON")
 	_ = c.RegisterFlagCompletionFunc("sort", cobra.FixedCompletions([]cobra.Completion{"none", "ping", "name"}, cobra.ShellCompDirectiveNoFileComp))
 	return c
@@ -97,10 +91,8 @@ func readls(c *cobra.Command) (lsopts, error) {
 
 func pingcmd() *cobra.Command {
 	c := &cobra.Command{
-		Use:   "ping [OPTION]... [SUB]...",
-		Short: "measure server latency",
-		Long: "Measure the latency of every server in the given SUBs (all of them by default)\n" +
-			"using the 'pingproto' setting, then list them fastest first.",
+		Use:               "ping [OPTION]... [SUB]...",
+		Short:             "measure latency",
 		GroupID:           "servers",
 		Args:              cobra.ArbitraryArgs,
 		ValidArgsFunction: completesubs,

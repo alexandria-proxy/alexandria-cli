@@ -79,24 +79,17 @@ func logscmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:     "logs [OPTION]... [FILTER]...",
 		Aliases: []string{"log"},
-		Short:   "print daemon, xray and sing-box logs",
-		Long: "Print the last lines the daemon, xray and sing-box logged.\n" +
-			"A FILTER is a source (daemon, xray, sing-box), a level (info, warn, err) or any\n" +
-			"other word that has to appear; -WORD or !WORD hides lines with WORD.",
-		Example: "  alexandria-cli logs -n 100\n" +
-			"  alexandria-cli logs -f xray err\n" +
-			"  alexandria-cli logs -- -sniff",
+		Short:   "print logs; FILTER is a source, level, word or -word",
 		GroupID: "logs",
 		Args:    cobra.ArbitraryArgs,
 		ValidArgsFunction: func(c *cobra.Command, args []string, _ string) ([]cobra.Completion, cobra.ShellCompDirective) {
 			return []cobra.Completion{"daemon", "xray", "sing-box", "info", "warn", "err"}, cobra.ShellCompDirectiveNoFileComp
 		},
-		Annotations: map[string]string{"exit": exitdefault + "\n  130  if --follow was interrupted."},
-		RunE:        runlogs,
+		RunE: runlogs,
 	}
 	f := c.Flags()
-	f.BoolP("follow", "f", false, "keep printing new lines as they come")
-	f.IntP("lines", "n", 50, "print the last `NUM` lines, 0 for all")
+	f.BoolP("follow", "f", false, "follow")
+	f.IntP("lines", "n", 50, "last `NUM` lines, 0 for all")
 	return c
 }
 

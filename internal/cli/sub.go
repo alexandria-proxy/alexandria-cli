@@ -14,9 +14,8 @@ import (
 )
 
 func subcmd() *cobra.Command {
-	return parent("sub COMMAND", "manage subscriptions: add, ls, up, rm, info",
-		"Manage subscriptions: the URLs your provider gave you, each with a list of servers.\n"+
-			"A SUB is its {number} from 'sub ls' or a part of its name.",
+	return parent("sub COMMAND", "manage subscriptions",
+		"SUB is a number from 'sub ls' or a part of the name.",
 		"subs", subaddcmd(), sublscmd(), subupcmd(), subrmcmd(), subinfocmd())
 }
 
@@ -24,12 +23,8 @@ func subaddcmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:     "add [OPTION]... URL...",
 		Aliases: []string{"a"},
-		Short:   "add subscriptions by URL",
-		Long: "Fetch each URL and add it as a subscription; with - read URLs from stdin,\n" +
-			"one per line. Adding a URL that's already there just updates it.",
-		Example: "  alexandria-cli sub add https://example.com/sub/token\n" +
-			"  alexandria-cli sub add - < urls.txt",
-		Args: minargs(1),
+		Short:   "add subscriptions",
+		Args:    minargs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			urls, err := operands(args)
 			if err != nil {
@@ -89,7 +84,7 @@ func sublscmd() *cobra.Command {
 				return printjson(out)
 			}
 			if len(list) == 0 {
-				infof("no subscriptions yet, add one: alexandria-cli sub add URL")
+				infof("no subscriptions")
 				return nil
 			}
 			numw, namew, cntw := 0, 0, 0
@@ -123,8 +118,7 @@ func subupcmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:               "up [OPTION]... [SUB]...",
 		Aliases:           []string{"update"},
-		Short:             "re-fetch subscriptions",
-		Long:              "Fetch the given SUBs again (all of them by default) to pick up new servers.",
+		Short:             "update subscriptions, all by default",
 		Args:              cobra.ArbitraryArgs,
 		ValidArgsFunction: completesubs,
 		RunE: func(c *cobra.Command, args []string) error {
@@ -188,8 +182,7 @@ func subrmcmd() *cobra.Command {
 func subinfocmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:               "info [OPTION]... SUB...",
-		Short:             "show subscription details",
-		Long:              "Show everything known about each SUB: traffic, expiry, links from the provider.",
+		Short:             "show traffic, expiry and provider links",
 		Args:              minargs(1),
 		ValidArgsFunction: completesubs,
 		RunE: func(c *cobra.Command, args []string) error {

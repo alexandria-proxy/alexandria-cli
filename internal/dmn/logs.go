@@ -1,6 +1,7 @@
 package dmn
 
 import (
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -88,18 +89,32 @@ func (r *ringbuf) reset() {
 	r.mu.Unlock()
 }
 
-var coretags = []struct{ tag, lvl string }{
-	{"[error]", "error"}, {"[warning]", "warn"}, {"[info]", "info"}, {"[debug]", "info"},
-	{" fatal[", "error"}, {" error[", "error"}, {" warn[", "warn"}, {" info[", "info"}, {" debug[", "info"},
+var (
+	ansi     = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
+	xraytime = regexp.MustCompile(`^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}(\.\d+)? `)
+	xraytag  = regexp.MustCompile(`^\[(Debug|Info|Warning|Error)\] `)
+	sboxtag  = regexp.MustCompile(`^(TRACE|DEBUG|INFO|WARN|ERROR|FATAL|PANIC)\[\d+\] (\[\d+ [^\]]*\] )?`)
+)
+
+var corelevels = map[string]string{
+	"debug": "info", "trace": "info", "info": "info",
+	"warning": "warn", "warn": "warn",
+	"error": "error", "fatal": "error", "panic": "error",
+}
+
+func clean(line string) (string, string) {
+	line = xraytime.ReplaceAllString(ansi.ReplaceAllString(line, ""), "")
+	if m := xraytag.FindStringSubmatch(line); m != nil {
+		return corelevels[strings.ToLower(m[1])], line[len(m[0]):]
+	}
+	if m := sboxtag.FindStringSubmatch(line); m != nil {
+		return corelevels[strings.ToLower(m[1])], line[len(m[0]):]
+	}
+	return level(line), line
 }
 
 func level(text string) string {
 	low := strings.ToLower(text)
-	for _, t := range coretags {
-		if strings.Contains(low, t.tag) {
-			return t.lvl
-		}
-	}
 	switch {
 	case strings.Contains(low, "error") || strings.Contains(low, "failed") || strings.Contains(low, "fatal"):
 		return "error"
@@ -119,9 +134,10 @@ func logerr(text string) {
 
 func logcore(src string, chunk []byte) {
 	for _, line := range strings.Split(string(chunk), "\n") {
-		if strings.TrimSpace(line) == "" {
+		lvl, text := clean(line)
+		if strings.TrimSpace(text) == "" {
 			continue
 		}
-		logs.push(src, level(line), line)
+		logs.push(src, lvl, text)
 	}
 }

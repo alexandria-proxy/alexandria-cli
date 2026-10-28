@@ -34,11 +34,11 @@ func ambiguous(arg string, names []string) error {
 func findserver(list []sub.Subscription, arg string) (entry, error) {
 	all := number(list)
 	if len(all) == 0 {
-		return entry{}, fmt.Errorf("no servers yet, add a subscription first: alexandria-cli sub add URL")
+		return entry{}, fmt.Errorf("no servers")
 	}
 	if n, err := strconv.Atoi(strings.Trim(arg, "{}")); err == nil {
 		if n < 1 || n > len(all) {
-			return entry{}, fmt.Errorf("no server {%d}, there are %d (see 'alexandria-cli ls')", n, len(all))
+			return entry{}, fmt.Errorf("no server {%d}", n)
 		}
 		return all[n-1], nil
 	}
@@ -75,11 +75,11 @@ func isflagrune(r rune) bool {
 
 func findsub(list []sub.Subscription, arg string) (int, error) {
 	if len(list) == 0 {
-		return 0, fmt.Errorf("no subscriptions yet, add one: alexandria-cli sub add URL")
+		return 0, fmt.Errorf("no subscriptions")
 	}
 	if n, err := strconv.Atoi(strings.Trim(arg, "{}")); err == nil {
 		if n < 1 || n > len(list) {
-			return 0, fmt.Errorf("no subscription {%d}, there are %d (see 'alexandria-cli sub ls')", n, len(list))
+			return 0, fmt.Errorf("no subscription {%d}", n)
 		}
 		return n - 1, nil
 	}

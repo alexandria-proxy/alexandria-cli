@@ -2,6 +2,7 @@ package dmn
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -228,13 +229,24 @@ func (c *conn) connect(srv sub.Server, url string, idx int, mode string) ipc.Res
 	c.opmu.Lock()
 	defer c.opmu.Unlock()
 
+	if mode == "tun" && !conf.Elevated() {
+		return ipc.Response{Error: "tun mode needs the daemon to run as root", Code: "needelevate"}
+	}
 	uc, _ := conf.Load()
 	set := uc.Settings
 	logs.configure(set.Logs)
 
-	cfg, err := gen.Xray(srv.Raw, genopts(set))
+	opts := genopts(set)
+	if mode == "tun" {
+		c.stopnow()
+		opts.Pinsrv = true
+	}
+	cfg, err := gen.Xray(srv.Raw, opts)
+	if errors.Is(err, gen.Errresolve) {
+		return ipc.Response{Error: err.Error(), Code: "noresolve"}
+	}
 	if err != nil {
-		return ipc.Response{Error: "this server's protocol isn't supported yet: " + err.Error(), Code: "unsupported"}
+		return ipc.Response{Error: "unsupported server: " + err.Error(), Code: "unsupported"}
 	}
 	xpath, err := core.Xray()
 	if err != nil {
@@ -252,9 +264,6 @@ func (c *conn) connect(srv sub.Server, url string, idx int, mode string) ipc.Res
 	socksport := gen.Socksport(cfg)
 
 	if mode == "tun" {
-		if !conf.Elevated() {
-			return ipc.Response{Error: "tun mode needs the daemon to run as root", Code: "needelevate"}
-		}
 		sbpath, err := core.Singbox()
 		if err != nil {
 			return ipc.Response{Error: "sing-box (tun engine) not found", Code: "nosingbox"}

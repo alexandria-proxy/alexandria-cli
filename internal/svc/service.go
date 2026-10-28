@@ -11,7 +11,7 @@ import (
 const label = "alexandria"
 
 var (
-	Errnotsupported = errors.New("no supported service manager here (systemd, launchd or Task Scheduler)")
+	Errnotsupported = errors.New("no systemd, launchd or Task Scheduler")
 	Errneedsroot    = errors.New("installing the service needs root")
 )
 

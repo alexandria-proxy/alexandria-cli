@@ -93,7 +93,7 @@ func isnumeric(s string) bool {
 }
 
 func Tun(o Tunopts) string {
-	resolver := map[string]any{"server": "dns-proxy", "strategy": o.strategy()}
+	resolver := map[string]any{"server": "dns-local", "strategy": o.strategy()}
 
 	proxy := map[string]any{
 		"type":            "socks",
@@ -144,24 +144,18 @@ func Tun(o Tunopts) string {
 			"rules":                 rules,
 		},
 	}
+	servers := []any{map[string]any{"type": "local", "tag": "dns-local"}}
+	final := "dns-local"
 	if o.Dnson {
-		cfg["dns"] = map[string]any{
-			"servers": []any{map[string]any{
-				"type":   "udp",
-				"tag":    "dns-proxy",
-				"server": o.dnsaddr(),
-				"detour": "direct",
-			}},
-		}
-	} else {
-		cfg["dns"] = map[string]any{
-			"servers": []any{map[string]any{
-				"type":   "local",
-				"tag":    "dns-proxy",
-				"detour": "direct",
-			}},
-		}
+		servers = append(servers, map[string]any{
+			"type":   "tcp",
+			"tag":    "dns-remote",
+			"server": o.dnsaddr(),
+			"detour": "proxy",
+		})
+		final = "dns-remote"
 	}
+	cfg["dns"] = map[string]any{"servers": servers, "final": final, "strategy": o.strategy()}
 
 	b, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {

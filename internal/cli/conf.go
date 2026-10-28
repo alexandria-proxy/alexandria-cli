@@ -191,8 +191,8 @@ func keytable() string {
 }
 
 func confcmd() *cobra.Command {
-	c := parent("conf COMMAND", "get and set options: ls, get, set, unset, edit, path",
-		"Get and set options in config.json. Connection options apply on the next 'conn'.\n\nKeys:\n"+keytable(),
+	c := parent("conf COMMAND", "get and set options",
+		"Keys:\n"+keytable(),
 		"settings", conflscmd(), confgetcmd(), confsetcmd(), confunsetcmd(), confeditcmd(), confpathcmd())
 	c.Aliases = []string{"config", "cfg"}
 	return c
@@ -202,7 +202,7 @@ func conflscmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:     "ls [OPTION]...",
 		Aliases: []string{"list"},
-		Short:   "list every option and its value",
+		Short:   "list options",
 		Args:    nargs,
 		RunE: func(c *cobra.Command, args []string) error {
 			asjson, _ := c.Flags().GetBool("json")
@@ -238,7 +238,7 @@ func conflscmd() *cobra.Command {
 func confgetcmd() *cobra.Command {
 	return &cobra.Command{
 		Use:               "get KEY...",
-		Short:             "print the value of each KEY",
+		Short:             "print values",
 		Args:              minargs(1),
 		ValidArgsFunction: completekeys,
 		RunE: func(c *cobra.Command, args []string) error {
@@ -261,11 +261,8 @@ func confgetcmd() *cobra.Command {
 
 func confsetcmd() *cobra.Command {
 	c := &cobra.Command{
-		Use:   "set [OPTION]... KEY VALUE | KEY=VALUE...",
-		Short: "set options",
-		Long:  "Set KEY to VALUE. Several options can be set at once as KEY=VALUE pairs.",
-		Example: "  alexandria-cli conf set mux on\n" +
-			"  alexandria-cli conf set frag=on frag.length=50-100 socksport=1080",
+		Use:               "set [OPTION]... KEY VALUE | KEY=VALUE...",
+		Short:             "set options",
 		Args:              minargs(1),
 		ValidArgsFunction: completeset,
 		RunE: func(c *cobra.Command, args []string) error {
@@ -291,7 +288,7 @@ func confsetcmd() *cobra.Command {
 func confunsetcmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:               "unset [OPTION]... KEY...",
-		Short:             "reset options to their defaults",
+		Short:             "reset to defaults",
 		Args:              minargs(1),
 		ValidArgsFunction: completekeys,
 		RunE: func(c *cobra.Command, args []string) error {
@@ -335,7 +332,7 @@ func applyconf(c *cobra.Command, pairs [][2]string, todefault bool) error {
 		if k.name == "tun.config" && cfg.Settings.Advanced.Tunconfig == "custom" {
 			if p, err := route.Custompath(); err == nil {
 				if _, err := os.Stat(p); err != nil {
-					warnf("%s doesn't exist yet, the default config is used until it does", p)
+					warnf("%s missing, using the default", p)
 				}
 			}
 		}
@@ -347,7 +344,7 @@ func applyconf(c *cobra.Command, pairs [][2]string, todefault bool) error {
 		return err
 	}
 	if st, ok := status(); reconnect && ok && st.Connected {
-		infof("reconnect to apply: alexandria-cli conn")
+		infof("applies on the next conn")
 	}
 	return nil
 }
@@ -355,8 +352,7 @@ func applyconf(c *cobra.Command, pairs [][2]string, todefault bool) error {
 func confeditcmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "edit",
-		Short: "open config.json in $EDITOR",
-		Long:  "Open config.json in $VISUAL or $EDITOR. Broken JSON is rolled back.",
+		Short: "edit in $EDITOR",
 		Args:  nargs,
 		RunE: func(c *cobra.Command, args []string) error {
 			p, err := conf.Path()
@@ -392,7 +388,7 @@ func confeditcmd() *cobra.Command {
 func confpathcmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "path",
-		Short: "print where config.json lives",
+		Short: "print the file path",
 		Args:  nargs,
 		RunE: func(c *cobra.Command, args []string) error {
 			p, err := conf.Path()

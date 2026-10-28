@@ -15,14 +15,7 @@ import (
 	"github.com/alexandria-proxy/alexandria-cli/internal/dmn"
 )
 
-const (
-	prog     = "alexandria-cli"
-	homepage = "https://github.com/alexandria-proxy/alexandria-cli"
-)
-
-const exitdefault = `  0  if OK,
-  1  if a problem occurred,
-  2  if the command line was wrong.`
+const prog = "alexandria-cli"
 
 func Execute(version, cores string) int {
 	if os.Getenv("ALEXANDRIA_DAEMON") == "1" {
@@ -65,11 +58,8 @@ func rundaemon(autoconnect, service bool) int {
 func newroot(version, cores string) *cobra.Command {
 	cobra.EnableCommandSorting = false
 	root := &cobra.Command{
-		Use:   prog + " [OPTION]... COMMAND [ARG]...",
-		Short: "control the alexandria proxy daemon",
-		Long: "Control the Alexandria proxy daemon: connect through Xray-core servers from your\n" +
-			"subscriptions, check status and tweak settings. The proxy keeps running in the\n" +
-			"background after the command returns.",
+		Use:           prog + " [OPTION]... COMMAND [ARG]...",
+		Short:         "command-line client for Xray-core",
 		Version:       version,
 		SilenceErrors: true,
 		SilenceUsage:  true,
@@ -104,7 +94,7 @@ func newroot(version, cores string) *cobra.Command {
 		"There is NO WARRANTY, to the extent permitted by law.\n")
 
 	pf := root.PersistentFlags()
-	pf.StringVar(&colorwhen, "color", "auto", "colorize the output; `WHEN` is 'always', 'never', or 'auto'")
+	pf.StringVar(&colorwhen, "color", "auto", "`WHEN`: always, never or auto")
 	pf.Lookup("color").NoOptDefVal = "always"
 	pf.BoolP("help", "h", false, "display this help and exit")
 	root.Flags().Bool("version", false, "output version information and exit")
@@ -189,8 +179,7 @@ func parent(use, short, long, group string, kids ...*cobra.Command) *cobra.Comma
 func helpcmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "help [COMMAND]...",
-		Short: "display help for COMMAND",
-		Long:  "Display help for COMMAND, or the overview with no COMMAND.",
+		Short: "display help",
 		ValidArgsFunction: func(c *cobra.Command, args []string, _ string) ([]cobra.Completion, cobra.ShellCompDirective) {
 			target, _, err := c.Root().Find(args)
 			if err != nil {
@@ -217,14 +206,8 @@ func helpcmd() *cobra.Command {
 
 func completioncmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "completion SHELL",
-		Short: "print a shell completion script",
-		Long: "Print the completion script for SHELL: bash, zsh, fish or powershell.\n" +
-			"Server numbers, subscriptions, settings keys and routes complete too.",
-		Example: "  alexandria-cli completion bash > ~/.local/share/bash-completion/completions/alexandria-cli\n" +
-			"  alexandria-cli completion zsh > \"${fpath[1]}/_alexandria-cli\"\n" +
-			"  alexandria-cli completion fish > ~/.config/fish/completions/alexandria-cli.fish\n" +
-			"  alexandria-cli completion powershell >> $PROFILE",
+		Use:       "completion SHELL",
+		Short:     "print a completion script",
 		GroupID:   "other",
 		Args:      rangeargs(1, 1),
 		ValidArgs: []cobra.Completion{"bash", "zsh", "fish", "powershell"},
@@ -299,11 +282,10 @@ func help(c *cobra.Command, _ []string) {
 		use = c.Parent().CommandPath() + " " + c.Use
 	}
 	b.WriteString("Usage: " + use + "\n")
-	desc := c.Long
-	if desc == "" {
-		desc = strings.ToUpper(c.Short[:1]) + c.Short[1:] + "."
+	b.WriteString(strings.ToUpper(c.Short[:1]) + c.Short[1:] + ".\n")
+	if c.Long != "" {
+		b.WriteString("\n" + c.Long + "\n")
 	}
-	b.WriteString(desc + "\n")
 	if len(c.Aliases) > 0 {
 		b.WriteString("\nAliases: " + strings.Join(c.Aliases, ", ") + "\n")
 	}
@@ -334,22 +316,6 @@ func help(c *cobra.Command, _ []string) {
 	}
 
 	b.WriteString("\nOptions:\n" + flaglines(c))
-	if c.Example != "" {
-		b.WriteString("\nExamples:\n" + strings.TrimRight(c.Example, "\n") + "\n")
-	}
-	if len(kids) == 0 || !c.HasParent() {
-		exit := c.Annotations["exit"]
-		if exit == "" {
-			exit = exitdefault
-		}
-		b.WriteString("\nExit status:\n" + exit + "\n")
-	}
-	if len(kids) > 0 {
-		fmt.Fprintf(&b, "\nRun '%s COMMAND --help' for more information on a command.\n", c.CommandPath())
-	}
-	if !c.HasParent() {
-		b.WriteString("Home page: <" + homepage + ">\n")
-	}
 	fmt.Fprint(c.OutOrStdout(), b.String())
 }
 

@@ -11,10 +11,8 @@ import (
 )
 
 func routecmd() *cobra.Command {
-	return parent("route COMMAND", "TUN bypass list: ls, add, rm, edit, path",
-		"Manage the TUN bypass list: CIDRs, IPs and domains that skip the tunnel and go\n"+
-			"direct. It's a plain text file, one entry per line, '#' starts a comment.\n"+
-			"Edit it any way you like; a running TUN connection picks changes up by itself.",
+	return parent("route COMMAND", "TUN bypass list",
+		"One CIDR, IP or domain per line, '#' comments. Reloaded live.",
 		"settings", routelscmd(), routeaddcmd(), routermcmd(), routeeditcmd(), routepathcmd())
 }
 
@@ -28,7 +26,7 @@ func routelscmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:     "ls [OPTION]...",
 		Aliases: []string{"list"},
-		Short:   "list the bypass entries",
+		Short:   "list entries",
 		Args:    nargs,
 		RunE: func(c *cobra.Command, args []string) error {
 			asjson, _ := c.Flags().GetBool("json")
@@ -64,11 +62,8 @@ func routelscmd() *cobra.Command {
 func routeaddcmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "add [OPTION]... ENTRY...",
-		Short: "add CIDRs, IPs or domains",
-		Long:  "Add each ENTRY to the bypass list; with - read entries from stdin.",
-		Example: "  alexandria-cli route add 10.0.0.0/8 192.168.0.0/16 yandex.ru\n" +
-			"  alexandria-cli route add - < ru-sites.txt",
-		Args: minargs(1),
+		Short: "add entries",
+		Args:  minargs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			list, err := operands(args)
 			if err != nil {
@@ -127,7 +122,7 @@ func routermcmd() *cobra.Command {
 func routeeditcmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "edit",
-		Short: "open the bypass list in $EDITOR",
+		Short: "edit in $EDITOR",
 		Args:  nargs,
 		RunE: func(c *cobra.Command, args []string) error {
 			p, err := route.Path()
@@ -158,7 +153,7 @@ func routeeditcmd() *cobra.Command {
 func routepathcmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "path",
-		Short: "print where the bypass list lives",
+		Short: "print the file path",
 		Args:  nargs,
 		RunE: func(c *cobra.Command, args []string) error {
 			p, err := route.Path()

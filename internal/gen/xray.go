@@ -3,6 +3,8 @@ package gen
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net"
 	"net/url"
 	"strconv"
@@ -37,6 +39,7 @@ type Opts struct {
 	Localdns   bool
 	Jsondns    bool
 	Resolvesrv bool
+	Pinsrv     bool
 }
 
 func Defaults() Opts {
@@ -162,14 +165,26 @@ func serverfield(ob map[string]any) (map[string]any, bool) {
 	return nil, false
 }
 
-func (o Opts) resolve(ob map[string]any) {
+var Errresolve = errors.New("can't resolve the server")
+
+func (o Opts) pin(ob map[string]any) error {
+	if !o.Resolvesrv && !o.Pinsrv {
+		return nil
+	}
+	if err := o.resolve(ob); err != nil && o.Pinsrv {
+		return err
+	}
+	return nil
+}
+
+func (o Opts) resolve(ob map[string]any) error {
 	node, ok := serverfield(ob)
 	if !ok {
-		return
+		return nil
 	}
 	host, _ := node["address"].(string)
 	if host == "" || net.ParseIP(host) != nil {
-		return
+		return nil
 	}
 	network := "ip"
 	switch o.Preferip {
@@ -182,7 +197,7 @@ func (o Opts) resolve(ob map[string]any) {
 	defer cancel()
 	addrs, err := net.DefaultResolver.LookupIP(ctx, network, host)
 	if err != nil || len(addrs) == 0 {
-		return
+		return fmt.Errorf("%w %s", Errresolve, host)
 	}
 	node["address"] = addrs[0].String()
 
@@ -195,6 +210,7 @@ func (o Opts) resolve(ob map[string]any) {
 			tls["serverName"] = host
 		}
 	}
+	return nil
 }
 
 func Xray(raw string, o Opts) (string, error) {
@@ -210,8 +226,8 @@ func build(raw string, o Opts) (string, error) {
 		return "", err
 	}
 	o.decorate(ob)
-	if o.Resolvesrv {
-		o.resolve(ob)
+	if err := o.pin(ob); err != nil {
+		return "", err
 	}
 
 	outs := []any{ob}
@@ -303,8 +319,8 @@ func retune(raw string, o Opts) (string, error) {
 	if len(filtered) > 0 {
 		if ob, ok := filtered[0].(map[string]any); ok {
 			o.decorate(ob)
-			if o.Resolvesrv {
-				o.resolve(ob)
+			if err := o.pin(ob); err != nil {
+				return raw, err
 			}
 		}
 	}

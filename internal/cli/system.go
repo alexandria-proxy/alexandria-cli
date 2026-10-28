@@ -45,14 +45,14 @@ func autostartcmd() *cobra.Command {
 	on := &cobra.Command{
 		Use:     "on [OPTION]...",
 		Aliases: []string{"enable"},
-		Short:   "reconnect to the last server at boot",
+		Short:   "enable",
 		Args:    nargs,
 		RunE:    set(true),
 	}
 	off := &cobra.Command{
 		Use:     "off [OPTION]...",
 		Aliases: []string{"disable"},
-		Short:   "stay disconnected at boot",
+		Short:   "disable",
 		Args:    nargs,
 		RunE:    set(false),
 	}
@@ -72,19 +72,15 @@ func autostartcmd() *cobra.Command {
 	}
 	addverbose(on)
 	addverbose(off)
-	return parent("autostart COMMAND", "reconnect at boot: on, off, stat",
-		"The service starts at boot anyway; autostart decides whether it reconnects to\n"+
-			"the last used server right away.", "settings", on, off, stat)
+	return parent("autostart COMMAND", "reconnect at boot", "", "settings", on, off, stat)
 }
 
 func svccmd() *cobra.Command {
 	on := &cobra.Command{
 		Use:     "on [OPTION]...",
 		Aliases: []string{"install"},
-		Short:   "install and start the system service",
-		Long: "Install the alexandria system service (systemd, launchd or Task Scheduler) and\n" +
-			"start it. Asks for your password once; 'conn' does this by itself.",
-		Args: nargs,
+		Short:   "install and start",
+		Args:    nargs,
 		RunE: func(c *cobra.Command, args []string) error {
 			if !svc.Supported() {
 				return svc.Errnotsupported
@@ -106,7 +102,7 @@ func svccmd() *cobra.Command {
 	off := &cobra.Command{
 		Use:     "off [OPTION]...",
 		Aliases: []string{"uninstall"},
-		Short:   "stop and remove the system service",
+		Short:   "stop and remove",
 		Args:    nargs,
 		RunE: func(c *cobra.Command, args []string) error {
 			if !svc.Installed() {
@@ -133,19 +129,16 @@ func svccmd() *cobra.Command {
 	}
 	addverbose(on)
 	addverbose(off)
-	c := parent("svc COMMAND", "the root system service: on, off, stat",
-		"The alexandria service runs the daemon as root (Administrator on Windows), so TUN\n"+
-			"works without sudo. The first 'conn' installs it and asks for your password once.",
-		"settings", on, off, stat)
+	c := parent("svc COMMAND", "system service", "", "settings", on, off, stat)
 	c.Aliases = []string{"service"}
 	return c
 }
 
 func resetcmd() *cobra.Command {
 	kinds := []struct{ use, kind, short, ask string }{
-		{"user", "user", "wipe subscriptions, settings and routes", "wipe all subscriptions, settings and routes"},
-		{"conf", "settings", "reset settings to their defaults", "reset every setting to its default"},
-		{"tun", "tun", "drop the connection and clean TUN leftovers", "disconnect and clean up the TUN device and routes"},
+		{"user", "user", "subscriptions, settings and routes", "wipe subscriptions, settings and routes"},
+		{"conf", "settings", "settings", "reset all settings"},
+		{"tun", "tun", "TUN device and routes", "disconnect and clean up TUN"},
 	}
 	var kids []*cobra.Command
 	for _, k := range kinds {
@@ -177,8 +170,7 @@ func resetcmd() *cobra.Command {
 			},
 		})
 	}
-	c := parent("reset COMMAND", "reset things: user, conf, tun",
-		"Reset user data, settings or the TUN state. Asks first unless --force is given.", "settings", kids...)
+	c := parent("reset COMMAND", "reset data, settings or TUN state", "", "settings", kids...)
 	c.PersistentFlags().BoolP("force", "f", false, "don't ask for confirmation")
 	c.PersistentFlags().BoolP("verbose", "v", false, "explain what is being done")
 	return c
@@ -186,7 +178,7 @@ func resetcmd() *cobra.Command {
 
 func confirm(question string) (bool, error) {
 	if !isterm(os.Stdin) {
-		return false, errors.New("refusing to reset without a terminal to confirm, use --force")
+		return false, errors.New("no terminal to confirm, use --force")
 	}
 	fmt.Fprintf(stderr, "%s [y/N] ", question)
 	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')

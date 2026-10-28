@@ -9,7 +9,7 @@ import (
 	"github.com/alexandria-proxy/alexandria-cli/internal/sub"
 )
 
-var version = "0.20"
+var version = "0.21"
 
 func main() {
 	sub.Version = version

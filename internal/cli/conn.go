@@ -21,27 +21,18 @@ import (
 
 func conncmd() *cobra.Command {
 	c := &cobra.Command{
-		Use:     "conn [OPTION]... [SERVER]",
-		Aliases: []string{"connect", "c"},
-		Short:   "connect to SERVER, or to the last used one",
-		Long: "Connect to SERVER: its {number} from 'ls' or a part of its name.\n" +
-			"With no SERVER, reconnect to the last used server.\n" +
-			"The mode set with --tun or --proxy is remembered for the next time.",
-		Example: "  alexandria-cli conn 2\n" +
-			"  alexandria-cli conn frank\n" +
-			"  alexandria-cli conn -b work\n" +
-			"  alexandria-cli conn -t\n\n" +
-			"The very first conn installs the alexandria system service and asks for your\n" +
-			"password once (UAC on Windows). After that TUN and proxy just work, no sudo.",
+		Use:               "conn [OPTION]... [SERVER]",
+		Aliases:           []string{"connect", "c"},
+		Short:             "connect; SERVER is a number from ls or a part of the name",
 		GroupID:           "conn",
 		Args:              maxargs(1),
 		ValidArgsFunction: completeservers,
 		RunE:              runconn,
 	}
 	f := c.Flags()
-	f.BoolP("tun", "t", false, "send all traffic through a TUN device (needs root)")
-	f.BoolP("proxy", "p", false, "only run the local SOCKS5/HTTP proxy")
-	f.BoolP("best", "b", false, "pick the fastest working server; SERVER then names a subscription")
+	f.BoolP("tun", "t", false, "TUN mode")
+	f.BoolP("proxy", "p", false, "proxy mode")
+	f.BoolP("best", "b", false, "fastest working server, SERVER names a subscription")
 	addverbose(c)
 	return c
 }
@@ -101,7 +92,7 @@ func runconn(c *cobra.Command, args []string) error {
 		cfg.Mode = mode
 		cfg.Lasturl, cfg.Lastsrv = resp.Activeurl, resp.Activesrv
 		if err := conf.Save(cfg); err != nil {
-			warnf("couldn't remember the server: %v", err)
+			warnf("can't save the server: %v", err)
 		}
 	}
 	if verbose(c) {
@@ -167,7 +158,6 @@ func dconncmd() *cobra.Command {
 		Use:     "dconn [OPTION]...",
 		Aliases: []string{"disconnect", "d"},
 		Short:   "disconnect",
-		Long:    "Disconnect and stop the proxy. The daemon exits by itself a minute later.",
 		GroupID: "conn",
 		Args:    nargs,
 		RunE: func(c *cobra.Command, args []string) error {
@@ -208,20 +198,15 @@ func statcmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:     "stat [OPTION]...",
 		Aliases: []string{"status", "st"},
-		Short:   "show connection status",
-		Long:    "Show whether the proxy is connected, to what, and how much traffic flows.",
+		Short:   "connection status, exit 3 if disconnected",
 		GroupID: "conn",
 		Args:    nargs,
-		Annotations: map[string]string{"exit": "  0  if connected,\n" +
-			"  1  if a problem occurred,\n" +
-			"  2  if the command line was wrong,\n" +
-			"  3  if not connected."},
-		RunE: runstat,
+		RunE:    runstat,
 	}
 	f := c.Flags()
 	f.BoolP("json", "j", false, "print JSON")
-	f.BoolP("quiet", "q", false, "print nothing, only set the exit status")
-	f.BoolP("watch", "w", false, "redraw every second until interrupted")
+	f.BoolP("quiet", "q", false, "exit status only")
+	f.BoolP("watch", "w", false, "redraw every second")
 	return c
 }
 
